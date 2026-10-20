@@ -1,0 +1,14 @@
+# Routes the project root into public/ and keeps application files
+# (config, .env, app, database, storage) out of the web root.
+# Everything NOT already under /public/ is forwarded there; real assets
+# resolve, unknown paths fall through to public/index.php.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteCond %{REQUEST_URI} !/public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+<Files ".env">
+    Require all denied
+</Files>

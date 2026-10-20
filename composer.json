@@ -1,0 +1,26 @@
+{
+    "name": "acme/sport-management",
+    "description": "Sport Management System built with PHP and Composer - teams, players, tournaments, matches and standings.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.1",
+        "ext-pdo": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/"
+        },
+        "files": [
+            "app/helpers.php"
+        ]
+    },
+    "scripts": {
+        "serve": "php -S localhost:8000 -t public",
+        "db:import": "mysql -u root < database/schema.sql"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

@@ -1,0 +1,13 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Uncomment and adjust if you serve the app from a sub-folder and get 404s:
+    # RewriteBase /sport_management/public/
+
+    # Serve real files (css, images, ...) directly.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Everything else goes through the front controller.
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
