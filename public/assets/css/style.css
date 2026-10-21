@@ -352,6 +352,52 @@ a.cal-chip:hover {
     min-height: 100vh;
 }
 
+.login-brand-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    border-radius: 20px;
+    font-size: 2rem;
+    color: #fff;
+    background: rgba(255, 255, 255, .12);
+    border: 1px solid rgba(255, 255, 255, .25);
+    backdrop-filter: blur(4px);
+}
+
+.login-card {
+    border-radius: 1rem;
+    overflow: hidden;
+}
+
+.login-card .input-group-text {
+    background: #f8fafc;
+    color: #64748b;
+}
+
+.login-error {
+    border-left: 4px solid #dc3545;
+    background: #fef2f2;
+    color: #842029;
+}
+
+.login-error strong {
+    font-weight: 600;
+}
+
+@keyframes login-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-7px); }
+    40% { transform: translateX(7px); }
+    60% { transform: translateX(-5px); }
+    80% { transform: translateX(5px); }
+}
+
+.login-shake {
+    animation: login-shake .5s ease-in-out;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 991.98px) {
     .app-shell {

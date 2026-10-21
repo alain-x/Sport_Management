@@ -43,6 +43,20 @@ test('2 wrong password is rejected with a mismatch message', function () {
     expect(session('errors')->first())->toContain('do not match');
 });
 
+test('2a the login page shows a prominent error banner after a failed attempt', function () {
+    $this->from('/login')->post('/login', [
+        'email' => 'admin@sport.test',
+        'password' => 'wrongpass',
+    ]);
+
+    $this->get('/login')
+        ->assertStatus(200)
+        ->assertSee('login-error', false)        // banner wrapper
+        ->assertSee('Sign in failed')
+        ->assertSee('do not match our records')
+        ->assertSee('is-invalid', false);        // field highlighted
+});
+
 test('2b a non-hash stored password yields a validation error, not a 500', function () {
     // A row whose password is not a bcrypt/argon hash used to make
     // BcryptHasher::verify() throw "This password does not use the Bcrypt
