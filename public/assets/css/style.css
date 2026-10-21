@@ -386,6 +386,69 @@ a.cal-chip:hover {
     font-weight: 600;
 }
 
+/* Floating pop-up toast: slides in, counts down, auto-dismisses after 3s. */
+.login-toast-wrap {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1080;
+    width: min(92vw, 420px);
+    pointer-events: none;
+}
+
+.login-toast {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: .65rem;
+    padding: .85rem 1rem;
+    border-radius: .75rem;
+    background: #dc3545;
+    color: #fff;
+    box-shadow: 0 12px 32px rgba(220, 53, 69, .45);
+    overflow: hidden;
+    pointer-events: auto;
+    opacity: 0;
+    transform: translateY(-24px);
+    transition: opacity .3s ease, transform .3s cubic-bezier(.2, .8, .3, 1.1);
+}
+
+.login-toast-in {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.login-toast-hide {
+    opacity: 0 !important;
+    transform: translateY(-24px) !important;
+}
+
+.login-toast-icon {
+    font-size: 1.35rem;
+    line-height: 1;
+    margin-top: .1rem;
+}
+
+.login-toast-body strong {
+    font-weight: 600;
+}
+
+.login-toast-progress {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    width: 100%;
+    background: rgba(255, 255, 255, .85);
+    transform-origin: left center;
+}
+
+@keyframes login-toast-progress {
+    from { transform: scaleX(1); }
+    to { transform: scaleX(0); }
+}
+
 @keyframes login-shake {
     0%, 100% { transform: translateX(0); }
     20% { transform: translateX(-7px); }

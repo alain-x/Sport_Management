@@ -43,7 +43,7 @@ test('2 wrong password is rejected with a mismatch message', function () {
     expect(session('errors')->first())->toContain('do not match');
 });
 
-test('2a the login page shows a prominent error banner after a failed attempt', function () {
+test('2a the login page shows a prominent error popup after a failed attempt', function () {
     $this->from('/login')->post('/login', [
         'email' => 'admin@sport.test',
         'password' => 'wrongpass',
@@ -51,7 +51,7 @@ test('2a the login page shows a prominent error banner after a failed attempt', 
 
     $this->get('/login')
         ->assertStatus(200)
-        ->assertSee('login-error', false)        // banner wrapper
+        ->assertSee('login-toast', false)        // floating popup wrapper
         ->assertSee('Sign in failed')
         ->assertSee('do not match our records')
         ->assertSee('is-invalid', false);        // field highlighted

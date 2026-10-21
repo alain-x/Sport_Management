@@ -42,16 +42,6 @@ $fieldError = $passwordError ?? $emailError;
                         </div>
                     @endforeach
 
-                    @if($loginError)
-                        <div class="alert alert-danger d-flex align-items-start gap-2 login-error" role="alert" aria-live="assertive">
-                            <i class="bi bi-exclamation-triangle-fill fs-5 lh-1"></i>
-                            <div>
-                                <strong class="d-block">Sign in failed</strong>
-                                <span class="small">{{ e($loginError) }}</span>
-                            </div>
-                        </div>
-                    @endif
-
                     <form method="post" action="{!! e(url('/login')) !!}" novalidate>
                         {!! csrf_field() !!}
 
@@ -106,25 +96,71 @@ $fieldError = $passwordError ?? $emailError;
     </div>
 </div>
 
+@if($loginError)
+    <div class="login-toast-wrap" id="loginToastWrap" role="alert" aria-live="assertive">
+        <div class="login-toast" id="loginToast">
+            <i class="bi bi-exclamation-triangle-fill login-toast-icon"></i>
+            <div class="login-toast-body">
+                <strong class="d-block">Sign in failed</strong>
+                <span class="small">{{ e($loginError) }}</span>
+            </div>
+            <button type="button" class="btn-close btn-close-white ms-2" id="loginToastClose" aria-label="Close"></button>
+            <span class="login-toast-progress" id="loginToastProgress"></span>
+        </div>
+    </div>
+@endif
+
 <script>
     (function () {
         var toggle = document.getElementById('togglePassword');
         var input = document.getElementById('password');
         var icon = document.getElementById('togglePasswordIcon');
-        if (!toggle || !input) return;
-        toggle.addEventListener('click', function () {
-            var show = input.type === 'password';
-            input.type = show ? 'text' : 'password';
-            if (icon) {
-                icon.classList.toggle('bi-eye', !show);
-                icon.classList.toggle('bi-eye-slash', show);
+        if (toggle && input) {
+            toggle.addEventListener('click', function () {
+                var show = input.type === 'password';
+                input.type = show ? 'text' : 'password';
+                if (icon) {
+                    icon.classList.toggle('bi-eye', !show);
+                    icon.classList.toggle('bi-eye-slash', show);
+                }
+                toggle.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+            });
+        }
+
+        // Login error pops as a toast for 3 seconds, then slides away.
+        var wrap = document.getElementById('loginToastWrap');
+        var toast = document.getElementById('loginToast');
+        var progress = document.getElementById('loginToastProgress');
+        var close = document.getElementById('loginToastClose');
+        if (wrap && toast) {
+            var HIDE_MS = 3000;
+            var t1, t2;
+
+            var dismiss = function () {
+                clearTimeout(t1);
+                clearTimeout(t2);
+                toast.classList.add('login-toast-hide');
+                setTimeout(function () { wrap.remove(); }, 350);
+            };
+
+            // restart the countdown bar animation
+            if (progress) {
+                progress.style.animation = 'none';
+                void progress.offsetWidth;
+                progress.style.animation = 'login-toast-progress ' + HIDE_MS + 'ms linear forwards';
             }
-            toggle.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-        });
+
+            requestAnimationFrame(function () { toast.classList.add('login-toast-in'); });
+            t1 = setTimeout(dismiss, HIDE_MS);
+            if (close) { close.addEventListener('click', dismiss); }
+            // Pause on hover so the reader can still read it.
+            toast.addEventListener('mouseenter', function () { clearTimeout(t1); });
+            toast.addEventListener('mouseleave', function () { t1 = setTimeout(dismiss, 1200); });
+        }
 
         // Shake the card the moment a failed attempt renders, to draw the eye.
         var card = document.querySelector('.login-card');
-        if (card && document.querySelector('.login-error')) {
+        if (card && wrap) {
             card.classList.add('login-shake');
             setTimeout(function () { card.classList.remove('login-shake'); }, 500);
         }
