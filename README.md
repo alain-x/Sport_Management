@@ -96,8 +96,9 @@ mysql -u root < database/schema.sql
 php artisan serve            # http://127.0.0.1:8000
 ```
 
-`database/schema.sql` is the complete v3 schema + demo seed (it drops and
-recreates the tables). The Laravel migrations match this schema exactly, so if
+`database/schema.sql` is the complete v3 schema + data (it drops and recreates
+the tables). To start from the original demo dataset instead, import
+`database/seed_demo.sql`. The Laravel migrations match this schema exactly, so if
 you already have an existing `sport_management` database with live data you can
 simply point `.env` at it — **nothing is re-seeded**. The optional
 non-destructive upgrade for older databases is `database/migrate_v3.sql`.
@@ -145,7 +146,8 @@ sport_management/
 ├── bootstrap/app.php       # routing + exception config (403/404/419)
 ├── database/
 │   ├── migrations/         # 9 schema-adopting migrations
-│   ├── schema.sql          # Complete v3 schema + demo seed
+│   ├── schema.sql          # Live-app schema + your data (import to sport_management)
+│   ├── seed_demo.sql       # Fixed demo dataset used by the test suite
 │   └── migrate_v3.sql      # Non-destructive v2 → v3 upgrade
 ├── public/                 # Web root: index.php, .htaccess, assets/, uploads/
 ├── resources/views/        # Blade templates (layout + pages)
@@ -320,18 +322,18 @@ been ported to **Pest feature tests** and are backed by a dedicated test databas
 so the live data is never touched.
 
 ```bash
-# 1. Import the demo schema into a throwaway test database
-#    (schema.sql hardcodes "sport_management", so swap the name on the way in)
+# 1. Create the throwaway test database and load the demo seed into it
 mysql -u root -e "CREATE DATABASE IF NOT EXISTS sport_management_test"
-#   PowerShell:
-#   (Get-Content database/schema.sql -Raw) -replace 'sport_management','sport_management_test' |
-#     mysql -u root
-#   bash/macOS:
-#   sed 's/sport_management/sport_management_test/g' database/schema.sql | mysql -u root
+mysql -u root sport_management_test < database/seed_demo.sql
 
 # 2. Run the suite
 php artisan test
 ```
+
+`database/seed_demo.sql` is the fixed 8-club / 24-player demo dataset the tests
+assert against (it is self-contained — no database name, no `USE`). Keep the
+live database (`database/schema.sql`, your own data) separate from it so editing
+real data never breaks the suite.
 
 `tests/Feature/Smoke/` mirrors the PowerShell suites:
 
@@ -342,11 +344,11 @@ php artisan test
 | `SmokeTest3Test.php` | `smoke_test3.ps1` | 36 — manager scoping, metrics/welfare, events, matches, uploads, CSRF |
 | `SmokeV3Test.php` | `smoke_v3.ps1` | 60 — player portal & scoping, check-in + photo, chat groups, admin |
 
-The tests run against the **seeded** `sport_management_test` schema inside a
-transaction (`DatabaseTransactions`), so they need no factories and always start
-from the demo data. `.env.testing` and `phpunit.xml` point at
-`sport_management_test`; `DatabaseGuardTest` asserts the suite is never wired to
-the live database.
+The tests run against the **seeded** `sport_management_test` database
+(`database/seed_demo.sql`) inside a transaction (`DatabaseTransactions`), so they
+need no factories and always start from the demo data. `.env.testing` and
+`phpunit.xml` point at `sport_management_test`; `DatabaseGuardTest` asserts the
+suite is never wired to the live database.
 
 The raw PowerShell suites can still be run against a live Laravel server:
 

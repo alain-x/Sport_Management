@@ -43,6 +43,24 @@ test('2 wrong password is rejected with a mismatch message', function () {
     expect(session('errors')->first())->toContain('do not match');
 });
 
+test('2b a non-hash stored password yields a validation error, not a 500', function () {
+    // A row whose password is not a bcrypt/argon hash used to make
+    // BcryptHasher::verify() throw "This password does not use the Bcrypt
+    // algorithm" and surface as a 500. It must instead be a normal mismatch.
+    User::where('email', 'admin@sport.test')->update(['password' => 'plaintext-not-a-hash']);
+
+    $r = $this->from('/login')->post('/login', [
+        'email' => 'admin@sport.test',
+        'password' => 'plaintext-not-a-hash',
+    ]);
+
+    $r->assertRedirect('/login');
+    $r->assertSessionHasErrors();
+    expect(session('errors')->first())->toContain('do not match');
+
+    $this->assertGuest();
+});
+
 test('3 correct login redirects to the dashboard', function () {
     $r = $this->post('/login', [
         'email' => 'admin@sport.test',

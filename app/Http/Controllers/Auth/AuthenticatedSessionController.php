@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -37,7 +38,7 @@ class AuthenticatedSessionController extends Controller
             $errors['password'][] = 'Password is required.';
         }
 
-        if ($errors === [] && ! Auth::attempt(['email' => $email, 'password' => $password])) {
+        if ($errors === [] && ! $this->credentialsMatch($email, $password)) {
             $errors['email'][] = 'These credentials do not match our records.';
         }
 
@@ -61,5 +62,37 @@ class AuthenticatedSessionController extends Controller
         $request->session()->regenerateToken();
 
         return redirect('/login')->with('success', 'You have been signed out. See you soon!');
+    }
+
+    /**
+     * Attempt to sign the user in.
+     *
+     * A stored value that is not a valid hash (for example a plaintext password
+     * inserted straight into the database) would make BcryptHasher::verify()
+     * throw "This password does not use the Bcrypt algorithm" and surface as a
+     * 500. Treat such a row as a non-matching credential instead of crashing.
+     */
+    private function credentialsMatch(string $email, string $password): bool
+    {
+        $user = User::where('email', $email)->first();
+
+        if ($user === null) {
+            return false;
+        }
+
+        $hash = (string) $user->getRawOriginal('password');
+
+        if (! $this->isUsableHash($hash)) {
+            return false;
+        }
+
+        return Auth::attempt(['email' => $email, 'password' => $password]);
+    }
+
+    /** True when the value looks like a hash the configured hasher can verify. */
+    private function isUsableHash(string $hash): bool
+    {
+        // bcrypt ($2y$ / $2a$ / $2b$), argon2i and argon2id.
+        return (bool) preg_match('/^\$(2[aby]|argon2i|argon2id)\$/', $hash);
     }
 }
