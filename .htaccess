@@ -1,12 +1,22 @@
-# Routes the project root into public/ and keeps application files
+# Routes the project root into public/ while keeping application files
 # (config, .env, app, database, storage) out of the web root.
-# Everything NOT already under /public/ is forwarded there; real assets
-# resolve, unknown paths fall through to public/index.php.
+#
+# Real files that live under public/ (assets, uploads, favicon) are served
+# directly; everything else is forwarded to the Laravel front controller.
+# The folder name is derived from the request, so this works whether the app
+# lives at /sport_management, /myapp or the document root.
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
-    RewriteCond %{REQUEST_URI} !/public/
-    RewriteRule ^(.*)$ public/$1 [L]
+    # Strip the leading project directory from REQUEST_URI so we can test the
+    # path against the public/ folder. BASE = "/<folder>/" (or "/" at the root).
+    RewriteCond %{REQUEST_URI} ^(/[^/]*/)?(.*)$
+    RewriteCond %{DOCUMENT_ROOT}%1public/%2 -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}%1public/%2 -d
+    RewriteRule ^ public/%2 [L]
+
+    # Anything else goes through the Laravel front controller.
+    RewriteRule ^ public/index.php [L]
 </IfModule>
 
 <Files ".env">

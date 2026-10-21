@@ -1,86 +1,148 @@
 <?php
 
-declare(strict_types=1);
-
 namespace App\Models;
 
-use App\Core\Database;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Player extends Model
 {
-    protected static string $table = 'players';
+    use HasFactory;
+
+    protected $table = 'players';
+
+    public $timestamps = false;
+
+    protected $fillable = [
+        'team_id', 'first_name', 'last_name', 'jersey_number', 'position',
+        'date_of_birth', 'nationality', 'foot', 'photo',
+        'goals', 'assists', 'appearances', 'minutes_played',
+        'yellow_cards', 'red_cards', 'rating',
+    ];
+
+    protected $casts = [
+        'team_id' => 'integer',
+        'jersey_number' => 'integer',
+        'date_of_birth' => 'date',
+        'goals' => 'integer',
+        'assists' => 'integer',
+        'appearances' => 'integer',
+        'minutes_played' => 'integer',
+        'yellow_cards' => 'integer',
+        'red_cards' => 'integer',
+        'rating' => 'float',
+        'created_at' => 'datetime',
+    ];
 
     public const POSITIONS = ['Goalkeeper', 'Defender', 'Midfielder', 'Forward'];
 
+    public const FEET = ['left', 'right', 'both'];
+
+    public function team()
+    {
+        return $this->belongsTo(Team::class);
+    }
+
+    public function metrics()
+    {
+        return $this->hasMany(PlayerMetric::class)->orderByDesc('test_date')->orderByDesc('id');
+    }
+
+    public function welfare()
+    {
+        return $this->hasMany(PlayerWelfare::class)->orderByDesc('assessment_date')->orderByDesc('id');
+    }
+
+    public function attendance()
+    {
+        return $this->hasMany(Attendance::class);
+    }
+
+    public function user()
+    {
+        return $this->hasOne(User::class);
+    }
+
+    public function fullName(): string
+    {
+        return trim($this->first_name.' '.$this->last_name);
+    }
+
+    /** Paginated players (with team name/code) for the index screen. */
     public static function paginate(int $limit, int $offset, string $search = '', ?int $teamId = null): array
     {
-        $where = [];
-        $params = [];
-        if ($search !== '') {
-            $where[] = '(p.first_name LIKE :q1 OR p.last_name LIKE :q2 OR p.nationality LIKE :q3)';
-            $params[':q1'] = '%' . $search . '%';
-            $params[':q2'] = '%' . $search . '%';
-            $params[':q3'] = '%' . $search . '%';
-        }
-        if ($teamId !== null) {
-            $where[] = 'p.team_id = :team_id';
-            $params[':team_id'] = $teamId;
-        }
-        $whereSql = $where === [] ? '' : ' WHERE ' . implode(' AND ', $where);
-
-        $sql = 'SELECT p.*, t.name AS team_name, t.code AS team_code
-                FROM players p
-                JOIN teams t ON t.id = p.team_id'
-            . $whereSql
-            . ' ORDER BY p.last_name ASC, p.first_name ASC
-               LIMIT ' . $limit . ' OFFSET ' . $offset;
-
-        return Database::query($sql, $params)->fetchAll();
+        return static::filterQuery($search, $teamId)
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->skip($offset)
+            ->take($limit)
+            ->get()
+            ->map(fn (self $p) => static::row($p))
+            ->all();
     }
 
     public static function countFiltered(string $search = '', ?int $teamId = null): int
     {
-        $where = [];
-        $params = [];
-        if ($search !== '') {
-            $where[] = '(p.first_name LIKE :q1 OR p.last_name LIKE :q2 OR p.nationality LIKE :q3)';
-            $params[':q1'] = '%' . $search . '%';
-            $params[':q2'] = '%' . $search . '%';
-            $params[':q3'] = '%' . $search . '%';
-        }
-        if ($teamId !== null) {
-            $where[] = 'p.team_id = :team_id';
-            $params[':team_id'] = $teamId;
-        }
-        $whereSql = $where === [] ? '' : ' WHERE ' . implode(' AND ', $where);
+        return static::filterQuery($search, $teamId)->count();
+    }
 
-        return (int) Database::query('SELECT COUNT(*) FROM players p' . $whereSql, $params)->fetchColumn();
+    private static function filterQuery(string $search, ?int $teamId)
+    {
+        $query = static::query()->with('team:id,name,code');
+
+        if ($search !== '') {
+            $like = '%'.$search.'%';
+            $query->where(function ($q) use ($like) {
+                $q->where('first_name', 'like', $like)
+                    ->orWhere('last_name', 'like', $like)
+                    ->orWhere('nationality', 'like', $like);
+            });
+        }
+
+        return $teamId === null ? $query : $query->where('team_id', $teamId);
+    }
+
+    /** @return array<string, mixed> */
+    private static function row(self $p): array
+    {
+        return $p->toArray() + [
+            'team_name' => $p->team?->name,
+            'team_code' => $p->team?->code,
+        ];
+    }
+
+    public static function countAll(): int
+    {
+        return static::count();
     }
 
     public static function topScorers(int $limit = 5): array
     {
-        return Database::query(
-            'SELECT p.*, t.name AS team_name, t.code AS team_code
-             FROM players p
-             JOIN teams t ON t.id = p.team_id
-             WHERE p.goals > 0
-             ORDER BY p.goals DESC, p.assists DESC, p.last_name ASC
-             LIMIT ' . $limit
-        )->fetchAll();
+        return static::with('team:id,name,code')
+            ->where('goals', '>', 0)
+            ->orderByDesc('goals')
+            ->orderByDesc('assists')
+            ->orderBy('last_name')
+            ->limit($limit)
+            ->get()
+            ->map(fn (self $p) => static::row($p))
+            ->all();
     }
 
     /** Top scorers limited to one team (team dashboard). */
     public static function topScorersForTeam(int $teamId, int $limit = 5): array
     {
-        return Database::query(
-            'SELECT p.*, t.name AS team_name, t.code AS team_code
-             FROM players p
-             JOIN teams t ON t.id = p.team_id
-             WHERE p.team_id = :tid AND p.goals > 0
-             ORDER BY p.goals DESC, p.assists DESC, p.last_name ASC
-             LIMIT ' . $limit,
-            [':tid' => $teamId]
-        )->fetchAll();
+        return static::with('team:id,name,code')
+            ->where('team_id', $teamId)
+            ->where('goals', '>', 0)
+            ->orderByDesc('goals')
+            ->orderByDesc('assists')
+            ->orderBy('last_name')
+            ->limit($limit)
+            ->get()
+            ->map(fn (self $p) => static::row($p))
+            ->all();
     }
 
     /**
@@ -91,7 +153,7 @@ class Player extends Model
      */
     public static function fitnessOverview(int $teamId): array
     {
-        $rows = Database::query(
+        $rows = DB::select(
             'SELECT m.fitness AS fitness, COUNT(*) AS total
              FROM players p
              LEFT JOIN player_metrics m ON m.id = (
@@ -100,15 +162,15 @@ class Player extends Model
                  ORDER BY m2.test_date DESC, m2.id DESC
                  LIMIT 1
              )
-             WHERE p.team_id = :tid
+             WHERE p.team_id = ?
              GROUP BY m.fitness',
-            [':tid' => $teamId]
-        )->fetchAll();
+            [$teamId]
+        );
 
         $overview = array_fill_keys([...PlayerMetric::FITNESS, 'untested'], 0);
         foreach ($rows as $row) {
-            $status = $row['fitness'] ?? 'untested';
-            $overview[$status] = (int) $row['total'];
+            $status = $row->fitness ?? 'untested';
+            $overview[$status] = (int) $row->total;
         }
 
         return $overview;
@@ -117,11 +179,13 @@ class Player extends Model
     /**
      * Squad wellbeing/medical alerts: players whose latest test marks them
      * injured, or whose latest welfare assessment is low/struggling.
+     *
+     * @return array<int, array<string, mixed>>
      */
     public static function alerts(int $teamId): array
     {
-        $injured = Database::query(
-            'SELECT p.id, p.first_name, p.last_name, p.jersey_number, p.photo,
+        $injured = DB::select(
+            "SELECT p.id, p.first_name, p.last_name, p.jersey_number, p.photo,
                     m.fitness AS flag, m.notes AS flag_notes, m.test_date AS flag_date
              FROM players p
              JOIN player_metrics m ON m.id = (
@@ -130,13 +194,13 @@ class Player extends Model
                  ORDER BY m2.test_date DESC, m2.id DESC
                  LIMIT 1
              )
-             WHERE p.team_id = :tid AND m.fitness = \'injured\'
-             ORDER BY m.test_date DESC',
-            [':tid' => $teamId]
-        )->fetchAll();
+             WHERE p.team_id = ? AND m.fitness = 'injured'
+             ORDER BY m.test_date DESC",
+            [$teamId]
+        );
 
-        $welfare = Database::query(
-            'SELECT p.id, p.first_name, p.last_name, p.jersey_number, p.photo,
+        $welfare = DB::select(
+            "SELECT p.id, p.first_name, p.last_name, p.jersey_number, p.photo,
                     w.wellbeing AS flag, w.notes AS flag_notes, w.assessment_date AS flag_date
              FROM players p
              JOIN player_welfare w ON w.id = (
@@ -145,23 +209,22 @@ class Player extends Model
                  ORDER BY w2.assessment_date DESC, w2.id DESC
                  LIMIT 1
              )
-             WHERE p.team_id = :tid AND w.wellbeing IN (\'low\', \'struggling\')
-             ORDER BY w.assessment_date DESC',
-            [':tid' => $teamId]
-        )->fetchAll();
+             WHERE p.team_id = ? AND w.wellbeing IN ('low', 'struggling')
+             ORDER BY w.assessment_date DESC",
+            [$teamId]
+        );
 
-        return array_merge($injured, $welfare);
+        return array_merge(
+            array_map(fn ($r) => (array) $r, $injured),
+            array_map(fn ($r) => (array) $r, $welfare)
+        );
     }
 
+    /** Player row with its team name/code attached, or null. */
     public static function withTeam(int $id): ?array
     {
-        $player = Database::query(
-            'SELECT p.*, t.name AS team_name, t.code AS team_code
-             FROM players p JOIN teams t ON t.id = p.team_id
-             WHERE p.id = :id',
-            [':id' => $id]
-        )->fetch();
+        $player = static::with('team:id,name,code')->find($id);
 
-        return $player !== false ? $player : null;
+        return $player !== null ? static::row($player) : null;
     }
 }

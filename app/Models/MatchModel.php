@@ -1,138 +1,161 @@
 <?php
 
-declare(strict_types=1);
-
 namespace App\Models;
 
-use App\Core\Database;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class MatchModel extends Model
 {
-    protected static string $table = 'matches';
+    use HasFactory;
+
+    protected $table = 'matches';
+
+    public $timestamps = false;
 
     public const STATUSES = ['scheduled', 'live', 'finished'];
 
-    private const SELECT_JOINED = 'SELECT m.*,
-                ht.name AS home_name, ht.code AS home_code,
-                at.name AS away_name, at.code AS away_code,
-                tt.name AS tournament_name
-             FROM matches m
-             JOIN teams ht ON ht.id = m.home_team_id
-             JOIN teams at ON at.id = m.away_team_id
-             LEFT JOIN tournaments tt ON tt.id = m.tournament_id';
+    protected $fillable = [
+        'tournament_id', 'home_team_id', 'away_team_id',
+        'home_score', 'away_score', 'match_date', 'venue', 'status',
+    ];
 
+    protected $casts = [
+        'tournament_id' => 'integer',
+        'home_team_id' => 'integer',
+        'away_team_id' => 'integer',
+        'home_score' => 'integer',
+        'away_score' => 'integer',
+        'match_date' => 'datetime',
+        'created_at' => 'datetime',
+    ];
+
+    public function tournament()
+    {
+        return $this->belongsTo(Tournament::class);
+    }
+
+    public function homeTeam()
+    {
+        return $this->belongsTo(Team::class, 'home_team_id');
+    }
+
+    public function awayTeam()
+    {
+        return $this->belongsTo(Team::class, 'away_team_id');
+    }
+
+    /** Base query with the joined team/tournament columns the views expect. */
+    private static function joined()
+    {
+        return static::query()->with(['homeTeam:id,name,code', 'awayTeam:id,name,code', 'tournament:id,name']);
+    }
+
+    /** @return array<string, mixed> */
+    private static function row(self $m): array
+    {
+        $row = $m->toArray();
+        $row['home_name'] = $m->homeTeam?->name;
+        $row['home_code'] = $m->homeTeam?->code;
+        $row['away_name'] = $m->awayTeam?->name;
+        $row['away_code'] = $m->awayTeam?->code;
+        $row['tournament_name'] = $m->tournament?->name;
+        // The original rows carried a datetime string for match_date.
+        $row['match_date'] = $m->match_date?->format('Y-m-d H:i:s');
+
+        return $row;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
     public static function paginate(int $limit, int $offset, array $filters = []): array
     {
-        [$where, $params] = self::filters($filters);
-
-        return Database::query(
-            self::SELECT_JOINED . $where . ' ORDER BY m.match_date DESC, m.id DESC
-            LIMIT ' . $limit . ' OFFSET ' . $offset,
-            $params
-        )->fetchAll();
+        return static::applyFilters(static::joined(), $filters)
+            ->orderByDesc('match_date')
+            ->orderByDesc('id')
+            ->skip($offset)
+            ->take($limit)
+            ->get()
+            ->map(fn (self $m) => static::row($m))
+            ->all();
     }
 
     public static function countFiltered(array $filters = []): int
     {
-        [$where, $params] = self::filters($filters);
-
-        return (int) Database::query('SELECT COUNT(*) FROM matches m' . $where, $params)->fetchColumn();
+        return static::applyFilters(static::query(), $filters)->count();
     }
 
-    /** @return array{0:string,1:array} */
-    private static function filters(array $filters): array
+    public static function countAll(): int
     {
-        $parts = [];
-        $params = [];
+        return static::count();
+    }
 
-        if (!empty($filters['tournament_id'])) {
-            $parts[] = 'm.tournament_id = :tournament_id';
-            $params[':tournament_id'] = (int) $filters['tournament_id'];
-        }
-        if (!empty($filters['status'])) {
-            $parts[] = 'm.status = :status';
-            $params[':status'] = $filters['status'];
-        }
-
-        return [$parts === [] ? '' : ' WHERE ' . implode(' AND ', $parts), $params];
+    private static function applyFilters($query, array $filters)
+    {
+        return $query
+            ->when(! empty($filters['tournament_id']), fn ($q) => $q->where('tournament_id', (int) $filters['tournament_id']))
+            ->when(! empty($filters['status']), fn ($q) => $q->where('status', $filters['status']));
     }
 
     public static function recent(int $limit = 5): array
     {
-        return Database::query(
-            self::SELECT_JOINED . " WHERE m.status = 'finished'
-             ORDER BY m.match_date DESC, m.id DESC LIMIT " . $limit
-        )->fetchAll();
+        return static::joined()->where('status', 'finished')
+            ->orderByDesc('match_date')->orderByDesc('id')->limit($limit)->get()
+            ->map(fn (self $m) => static::row($m))->all();
     }
 
     public static function upcoming(int $limit = 5): array
     {
-        return Database::query(
-            self::SELECT_JOINED . " WHERE m.status = 'scheduled'
-             ORDER BY m.match_date ASC LIMIT " . $limit
-        )->fetchAll();
+        return static::joined()->where('status', 'scheduled')
+            ->orderBy('match_date')->limit($limit)->get()
+            ->map(fn (self $m) => static::row($m))->all();
     }
 
-    /**
-     * Matches kicking off between two datetimes (calendar overlay).
-     * $teamId = null shows every match; otherwise only that team's fixtures.
-     */
+    /** Matches kicking off between two datetimes (calendar overlay). */
     public static function between(string $from, string $to, ?int $teamId): array
     {
-        $where = 'm.match_date >= :from AND m.match_date < :to';
-        $params = [':from' => $from, ':to' => $to];
-
-        if ($teamId !== null) {
-            $where .= ' AND (m.home_team_id = :scope_home OR m.away_team_id = :scope_away)';
-            $params[':scope_home'] = $teamId;
-            $params[':scope_away'] = $teamId;
-        }
-
-        return Database::query(
-            self::SELECT_JOINED . ' WHERE ' . $where . ' ORDER BY m.match_date ASC',
-            $params
-        )->fetchAll();
+        return static::joined()
+            ->where('match_date', '>=', $from)
+            ->where('match_date', '<', $to)
+            ->when($teamId !== null, fn ($q) => $q->where(fn ($w) => $w
+                ->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId)))
+            ->orderBy('match_date')
+            ->get()
+            ->map(fn (self $m) => static::row($m))->all();
     }
 
     /** Latest finished results involving one team. */
     public static function recentForTeam(int $teamId, int $limit = 5): array
     {
-        return Database::query(
-            self::SELECT_JOINED . " WHERE m.status = 'finished'
-             AND (m.home_team_id = :team_a OR m.away_team_id = :team_b)
-             ORDER BY m.match_date DESC, m.id DESC LIMIT " . $limit,
-            [':team_a' => $teamId, ':team_b' => $teamId]
-        )->fetchAll();
+        return static::joined()->where('status', 'finished')
+            ->where(fn ($q) => $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId))
+            ->orderByDesc('match_date')->orderByDesc('id')->limit($limit)->get()
+            ->map(fn (self $m) => static::row($m))->all();
     }
 
     /** Next scheduled fixtures involving one team. */
     public static function upcomingForTeam(int $teamId, int $limit = 5): array
     {
-        return Database::query(
-            self::SELECT_JOINED . " WHERE m.status = 'scheduled'
-             AND (m.home_team_id = :team_a OR m.away_team_id = :team_b)
-             ORDER BY m.match_date ASC LIMIT " . $limit,
-            [':team_a' => $teamId, ':team_b' => $teamId]
-        )->fetchAll();
+        return static::joined()->where('status', 'scheduled')
+            ->where(fn ($q) => $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId))
+            ->orderBy('match_date')->limit($limit)->get()
+            ->map(fn (self $m) => static::row($m))->all();
     }
 
     public static function finishedForTournament(int $tournamentId): array
     {
-        return Database::query(
-            self::SELECT_JOINED . " WHERE m.tournament_id = :tid AND m.status = 'finished'
-             ORDER BY m.match_date ASC",
-            [':tid' => $tournamentId]
-        )->fetchAll();
+        return static::joined()->where('tournament_id', $tournamentId)
+            ->where('status', 'finished')->orderBy('match_date')->get()
+            ->map(fn (self $m) => static::row($m))->all();
     }
 
+    /** Match row with teams/tournament attached, or null. */
     public static function withTeams(int $id): ?array
     {
-        $match = Database::query(
-            self::SELECT_JOINED . ' WHERE m.id = :id',
-            [':id' => $id]
-        )->fetch();
+        $match = static::joined()->find($id);
 
-        return $match !== false ? $match : null;
+        return $match !== null ? static::row($match) : null;
     }
 
     /**
@@ -147,19 +170,14 @@ class MatchModel extends Model
 
         foreach ($matches as $m) {
             foreach (['home', 'away'] as $side) {
-                $teamId = (int) $m[$side . '_team_id'];
-                if (!isset($stats[$teamId])) {
+                $teamId = (int) $m[$side.'_team_id'];
+                if (! isset($stats[$teamId])) {
                     $stats[$teamId] = [
                         'team_id' => $teamId,
-                        'team_name' => $m[$side . '_name'],
-                        'team_code' => $m[$side . '_code'],
-                        'played' => 0,
-                        'won' => 0,
-                        'drawn' => 0,
-                        'lost' => 0,
-                        'gf' => 0,
-                        'ga' => 0,
-                        'points' => 0,
+                        'team_name' => $m[$side.'_name'],
+                        'team_code' => $m[$side.'_code'],
+                        'played' => 0, 'won' => 0, 'drawn' => 0, 'lost' => 0,
+                        'gf' => 0, 'ga' => 0, 'points' => 0,
                     ];
                 }
             }
@@ -199,27 +217,16 @@ class MatchModel extends Model
                     'team_id' => (int) $team['id'],
                     'team_name' => $team['name'],
                     'team_code' => $team['code'],
-                    'played' => 0,
-                    'won' => 0,
-                    'drawn' => 0,
-                    'lost' => 0,
-                    'gf' => 0,
-                    'ga' => 0,
-                    'points' => 0,
+                    'played' => 0, 'won' => 0, 'drawn' => 0, 'lost' => 0,
+                    'gf' => 0, 'ga' => 0, 'points' => 0,
                 ];
             }
         }
 
         usort($stats, static fn (array $a, array $b): int => [
-            $b['points'],
-            $b['gf'] - $b['ga'],
-            $b['gf'],
-            $b['team_name'],
+            $b['points'], $b['gf'] - $b['ga'], $b['gf'], $b['team_name'],
         ] <=> [
-            $a['points'],
-            $a['gf'] - $a['ga'],
-            $a['gf'],
-            $a['team_name'],
+            $a['points'], $a['gf'] - $a['ga'], $a['gf'], $a['team_name'],
         ]);
 
         foreach ($stats as &$row) {

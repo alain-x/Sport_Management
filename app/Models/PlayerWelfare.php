@@ -1,52 +1,89 @@
 <?php
 
-declare(strict_types=1);
-
 namespace App\Models;
 
-use App\Core\Database;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 /** Mental / wellbeing assessments (one player, many rows). */
 class PlayerWelfare extends Model
 {
-    protected static string $table = 'player_welfare';
+    use HasFactory;
+
+    protected $table = 'player_welfare';
+
+    public $timestamps = false;
 
     public const WELLBEING = ['great', 'good', 'okay', 'low', 'struggling'];
 
+    protected $fillable = [
+        'player_id', 'assessment_date', 'confidence', 'focus', 'motivation',
+        'stress', 'wellbeing', 'notes', 'assessed_by',
+    ];
+
+    protected $casts = [
+        'player_id' => 'integer',
+        'assessment_date' => 'date',
+        'confidence' => 'integer',
+        'focus' => 'integer',
+        'motivation' => 'integer',
+        'stress' => 'integer',
+        'assessed_by' => 'integer',
+        'created_at' => 'datetime',
+    ];
+
+    public function player()
+    {
+        return $this->belongsTo(Player::class);
+    }
+
+    public function assessor()
+    {
+        return $this->belongsTo(User::class, 'assessed_by');
+    }
+
+    /** @return array<string, mixed> */
+    private static function row(self $w): array
+    {
+        $row = $w->toArray();
+        $row['assessment_date'] = $w->assessment_date?->format('Y-m-d');
+        $row['assessed_by_name'] = $w->assessor?->name;
+
+        return $row;
+    }
+
+    /** @return array<int, array<string, mixed>> */
     public static function forPlayer(int $playerId): array
     {
-        return Database::query(
-            'SELECT w.*, u.name AS assessed_by_name
-             FROM player_welfare w
-             LEFT JOIN users u ON u.id = w.assessed_by
-             WHERE w.player_id = :pid
-             ORDER BY w.assessment_date DESC, w.id DESC',
-            [':pid' => $playerId]
-        )->fetchAll();
+        return static::with('assessor:id,name')
+            ->where('player_id', $playerId)
+            ->orderByDesc('assessment_date')->orderByDesc('id')
+            ->get()
+            ->map(fn (self $w) => static::row($w))->all();
     }
 
     public static function latestFor(int $playerId): ?array
     {
-        $row = Database::query(
-            'SELECT * FROM player_welfare WHERE player_id = :pid
-             ORDER BY assessment_date DESC, id DESC LIMIT 1',
-            [':pid' => $playerId]
-        )->fetch();
+        $w = static::with('assessor:id,name')
+            ->where('player_id', $playerId)
+            ->orderByDesc('assessment_date')->orderByDesc('id')
+            ->first();
 
-        return $row !== false ? $row : null;
+        return $w !== null ? static::row($w) : null;
     }
 
-    /** Welfare row with its owning player's team (for authorization). */
+    /** Welfare row with its owning player's team (for authorization), or null. */
     public static function withPlayer(int $id): ?array
     {
-        $row = Database::query(
-            'SELECT w.*, p.team_id, p.first_name, p.last_name
-             FROM player_welfare w
-             JOIN players p ON p.id = w.player_id
-             WHERE w.id = :id',
-            [':id' => $id]
-        )->fetch();
+        $w = static::with('player:id,team_id,first_name,last_name')->find($id);
+        if ($w === null) {
+            return null;
+        }
 
-        return $row !== false ? $row : null;
+        return $w->toArray() + [
+            'team_id' => $w->player?->team_id,
+            'first_name' => $w->player?->first_name,
+            'last_name' => $w->player?->last_name,
+        ];
     }
 }

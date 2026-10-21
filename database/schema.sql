@@ -10,6 +10,10 @@ CREATE DATABASE IF NOT EXISTS `sport_management`
 USE `sport_management`;
 
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS `chat_messages`;
+DROP TABLE IF EXISTS `chat_room_members`;
+DROP TABLE IF EXISTS `chat_rooms`;
+DROP TABLE IF EXISTS `attendance`;
 DROP TABLE IF EXISTS `events`;
 DROP TABLE IF EXISTS `player_welfare`;
 DROP TABLE IF EXISTS `player_metrics`;
@@ -57,7 +61,7 @@ CREATE TABLE `users` (
     `name`       VARCHAR(100) NOT NULL,
     `email`      VARCHAR(190) NOT NULL,
     `password`   VARCHAR(255) NOT NULL,
-    `role`       ENUM('admin','manager') NOT NULL DEFAULT 'manager',
+    `role`       ENUM('admin','manager','player') NOT NULL DEFAULT 'manager',
     `team_id`    INT UNSIGNED DEFAULT NULL,
     `phone`      VARCHAR(30)  DEFAULT NULL,
     `photo`      VARCHAR(255) DEFAULT NULL,
@@ -329,3 +333,108 @@ INSERT INTO `events` (`title`, `type`, `starts_at`, `team_id`, `tournament_id`, 
 ('Transfer window review',           'deadline', '2026-10-30 17:00:00', NULL, NULL, 'League-wide review of mid-season registrations.', NULL),
 ('Winter Cup registration deadline', 'deadline', '2026-12-15 23:59:00', NULL, 2, 'Final squad lists must be submitted.', NULL),
 ('Foundation open day',              'media',    '2026-11-05 11:00:00', NULL, NULL, 'Community event at the National Arena.', NULL);
+
+-- ------------------------------------------------------------
+-- Player login accounts (v3): link a `player` user to a players row.
+-- Added after `players` exists so the foreign key can be created.
+-- ------------------------------------------------------------
+ALTER TABLE `users`
+    ADD COLUMN `player_id` INT UNSIGNED DEFAULT NULL AFTER `team_id`,
+    ADD KEY `users_player_id_index` (`player_id`),
+    ADD CONSTRAINT `users_player_id_foreign`
+        FOREIGN KEY (`player_id`) REFERENCES `players` (`id`) ON DELETE CASCADE;
+
+-- Demo player login for James Carter (Thunder FC, player 1). Password: password
+INSERT INTO `users` (`name`, `email`, `password`, `role`, `team_id`, `player_id`, `phone`) VALUES
+('James Carter', 'james@sport.test', '$2y$10$7ylYB5ExaDFvj09owVL.BOYPghRZGXOHmKK7esgq1KRPH8kXVg8Ny', 'player', 1, 1, '+44 161 496 0010');
+
+-- ------------------------------------------------------------
+-- Attendance: a player records presence for a training session,
+-- optionally attaching a check-in photo (selfie). One row per
+-- player per session (enforced by the unique key).
+-- ------------------------------------------------------------
+CREATE TABLE `attendance` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `event_id`   INT UNSIGNED NOT NULL,
+    `player_id`  INT UNSIGNED NOT NULL,
+    `status`     ENUM('present','absent','late','excused') NOT NULL DEFAULT 'present',
+    `photo`      VARCHAR(255) DEFAULT NULL,
+    `notes`      TEXT         DEFAULT NULL,
+    `created_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `attendance_event_player_unique` (`event_id`,`player_id`),
+    KEY `attendance_player_id_index` (`player_id`),
+    CONSTRAINT `attendance_event_id_foreign`
+        FOREIGN KEY (`event_id`) REFERENCES `events` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `attendance_player_id_foreign`
+        FOREIGN KEY (`player_id`) REFERENCES `players` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Demo attendance: a couple of Thunder FC players checked in to the first training session (event 1).
+INSERT INTO `attendance` (`event_id`, `player_id`, `status`, `notes`) VALUES
+(1, 1, 'present', 'On time.'),
+(1, 2, 'present', NULL);
+
+-- ------------------------------------------------------------
+-- Chat: a team room per team (everyone in that team can post) plus
+-- admin-created group rooms with explicit membership.
+-- ------------------------------------------------------------
+CREATE TABLE `chat_rooms` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `name`       VARCHAR(120) NOT NULL,
+    `type`       ENUM('team','group') NOT NULL DEFAULT 'team',
+    `team_id`    INT UNSIGNED DEFAULT NULL,
+    `created_by` INT UNSIGNED DEFAULT NULL,
+    `created_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `chat_rooms_team_id_index` (`team_id`),
+    CONSTRAINT `chat_rooms_team_id_foreign`
+        FOREIGN KEY (`team_id`) REFERENCES `teams` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `chat_rooms_created_by_foreign`
+        FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `chat_room_members` (
+    `id`      INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `room_id` INT UNSIGNED NOT NULL,
+    `user_id` INT UNSIGNED NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `chat_room_members_unique` (`room_id`,`user_id`),
+    CONSTRAINT `chat_member_room_foreign`
+        FOREIGN KEY (`room_id`) REFERENCES `chat_rooms` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `chat_member_user_foreign`
+        FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `chat_messages` (
+    `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `room_id`    INT UNSIGNED NOT NULL,
+    `user_id`    INT UNSIGNED NOT NULL,
+    `body`       TEXT         NOT NULL,
+    `created_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `chat_messages_room_id_index` (`room_id`),
+    CONSTRAINT `chat_message_room_foreign`
+        FOREIGN KEY (`room_id`) REFERENCES `chat_rooms` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `chat_message_user_foreign`
+        FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Team chat room for every club.
+INSERT INTO `chat_rooms` (`name`, `type`, `team_id`)
+    SELECT CONCAT(t.name, ' Chat'), 'team', t.id FROM `teams` t;
+
+-- Admin-created group room with two members (admin + Thunder FC manager).
+INSERT INTO `chat_rooms` (`name`, `type`, `team_id`, `created_by`)
+    VALUES ('Captain''s Council', 'group', NULL, 1);
+INSERT INTO `chat_room_members` (`room_id`, `user_id`)
+    SELECT r.id, u.id FROM `chat_rooms` r CROSS JOIN `users` u
+    WHERE r.type = 'group' AND r.name = 'Captain''s Council' AND u.email IN ('admin@sport.test', 'manager@sport.test');
+
+-- Demo messages in the Thunder FC team chat.
+INSERT INTO `chat_messages` (`room_id`, `user_id`, `body`)
+    SELECT r.id, u.id, 'Welcome to the Thunder FC team chat, lads.' FROM `chat_rooms` r CROSS JOIN `users` u
+    WHERE r.type = 'team' AND r.team_id = 1 AND u.email = 'manager@sport.test';
+INSERT INTO `chat_messages` (`room_id`, `user_id`, `body`)
+    SELECT r.id, u.id, 'Thanks gaffer - ready for tomorrow''s session.' FROM `chat_rooms` r CROSS JOIN `users` u
+    WHERE r.type = 'team' AND r.team_id = 1 AND u.email = 'james@sport.test';

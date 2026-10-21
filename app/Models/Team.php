@@ -1,93 +1,158 @@
 <?php
 
-declare(strict_types=1);
-
 namespace App\Models;
 
-use App\Core\Database;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class Team extends Model
 {
-    protected static string $table = 'teams';
+    use HasFactory;
 
-    public static function paginate(int $limit, int $offset, string $search = ''): array
+    protected $table = 'teams';
+
+    public $timestamps = false;
+
+    protected $fillable = [
+        'name', 'code', 'coach', 'city', 'founded_year', 'logo', 'description',
+    ];
+
+    protected $casts = [
+        'founded_year' => 'integer',
+        'created_at' => 'datetime',
+    ];
+
+    public function players()
     {
-        $where = '';
-        $params = [];
-        if ($search !== '') {
-            $where = ' WHERE t.name LIKE :q1 OR t.code LIKE :q2 OR t.city LIKE :q3 OR t.coach LIKE :q4';
-            $params[':q1'] = '%' . $search . '%';
-            $params[':q2'] = '%' . $search . '%';
-            $params[':q3'] = '%' . $search . '%';
-            $params[':q4'] = '%' . $search . '%';
+        return $this->hasMany(Player::class);
+    }
+
+    public function users()
+    {
+        return $this->hasMany(User::class);
+    }
+
+    public function homeMatches()
+    {
+        return $this->hasMany(MatchModel::class, 'home_team_id');
+    }
+
+    public function awayMatches()
+    {
+        return $this->hasMany(MatchModel::class, 'away_team_id');
+    }
+
+    /** Compact id => name/code list for dropdowns (array shape). */
+    public static function options(): array
+    {
+        return static::query()
+            ->orderBy('name')
+            ->get(['id', 'name', 'code'])
+            ->map(fn (self $t) => [
+                'id' => (int) $t->id,
+                'name' => $t->name,
+                'code' => $t->code,
+            ])
+            ->all();
+    }
+
+    /** Search across name/code/city/coach (matches the original OR query). */
+    public static function searchQuery(string $search)
+    {
+        $query = static::query();
+
+        if ($search === '') {
+            return $query;
         }
 
-        $sql = 'SELECT t.*, COUNT(p.id) AS players_count
-                FROM teams t
-                LEFT JOIN players p ON p.team_id = t.id'
-            . $where
-            . ' GROUP BY t.id
-               ORDER BY t.name ASC
-               LIMIT ' . $limit . ' OFFSET ' . $offset;
-        return Database::query($sql, $params)->fetchAll();
+        $like = '%'.$search.'%';
+
+        return $query->where(function ($q) use ($like) {
+            $q->where('name', 'like', $like)
+                ->orWhere('code', 'like', $like)
+                ->orWhere('city', 'like', $like)
+                ->orWhere('coach', 'like', $like);
+        });
+    }
+
+    /**
+     * Paginated teams with a players_count, ordered by name (index screen).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function paginate(int $limit, int $offset, string $search = ''): array
+    {
+        return static::searchQuery($search)
+            ->withCount('players')
+            ->orderBy('name')
+            ->skip($offset)
+            ->take($limit)
+            ->get()
+            ->map(fn (self $t) => $t->toArray() + ['players_count' => (int) $t->players_count])
+            ->all();
     }
 
     public static function countSearch(string $search = ''): int
     {
-        if ($search === '') {
-            return self::countAll();
-        }
-
-        return (int) Database::query(
-            'SELECT COUNT(*) FROM teams WHERE name LIKE :q1 OR code LIKE :q2 OR city LIKE :q3 OR coach LIKE :q4',
-            [
-                ':q1' => '%' . $search . '%',
-                ':q2' => '%' . $search . '%',
-                ':q3' => '%' . $search . '%',
-                ':q4' => '%' . $search . '%',
-            ]
-        )->fetchColumn();
+        return static::searchQuery($search)->count();
     }
 
-    /** Compact id => name/code list for dropdowns. */
-    public static function options(): array
+    public static function countAll(): int
     {
-        return Database::query('SELECT id, name, code FROM teams ORDER BY name ASC')->fetchAll();
+        return static::count();
     }
 
-    /** Team row with its staff accounts attached. */
+    /** Team row (with a staff list) as an array, or null. */
     public static function withStaff(int $id): ?array
     {
-        $team = self::find($id);
+        $team = static::find($id);
         if ($team === null) {
             return null;
         }
 
-        $team['staff'] = User::forTeam($id);
-        $team['staff_count'] = count($team['staff']);
+        $staff = static::query()
+            ->whereKey($id)
+            ->first()
+            ->users()
+            ->where('role', User::ROLE_MANAGER)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get()
+            ->toArray();
 
-        return $team;
+        return $team->toArray() + [
+            'staff' => $staff,
+            'staff_count' => count($staff),
+        ];
     }
 
+    /** Team row (with its squad) as an array, or null. */
     public static function withPlayers(int $id): ?array
     {
-        $team = self::find($id);
+        $team = static::find($id);
         if ($team === null) {
             return null;
         }
 
-        $team['players'] = Database::query(
-            'SELECT * FROM players WHERE team_id = :id ORDER BY jersey_number IS NULL, jersey_number ASC, last_name ASC',
-            [':id' => $id]
-        )->fetchAll();
+        $players = $team->players()
+            ->orderByRaw('jersey_number IS NULL, jersey_number ASC')
+            ->orderBy('last_name')
+            ->get()
+            ->toArray();
 
-        $team['players_count'] = count($team['players']);
-        $team['finished_matches'] = (int) Database::query(
-            'SELECT COUNT(*) FROM matches
-             WHERE (home_team_id = :home OR away_team_id = :away) AND status = \'finished\'',
-            [':home' => $id, ':away' => $id]
-        )->fetchColumn();
+        $finished = $team->homeMatches()->where('status', 'finished')->count()
+            + $team->awayMatches()->where('status', 'finished')->count();
 
-        return $team;
+        return $team->toArray() + [
+            'players' => $players,
+            'players_count' => count($players),
+            'finished_matches' => $finished,
+        ];
+    }
+
+    /** Team row as an array, or null. */
+    public static function findArray(int $id): ?array
+    {
+        return static::find($id)?->toArray();
     }
 }

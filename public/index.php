@@ -1,29 +1,39 @@
 <?php
 
-declare(strict_types=1);
+use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
 
-/**
- * Front controller: every request enters the application here.
- */
+define('LARAVEL_START', microtime(true));
 
-define('BASE_PATH', dirname(__DIR__));
-define('VIEWS_PATH', BASE_PATH . '/storage/views');
+// Support being served straight from the project root (see the root .htaccess),
+// where SCRIPT_NAME points at /<app>/public/index.php while REQUEST_URI is the
+// public URL (/<app>/...). Rewriting SCRIPT_NAME back to the project root makes
+// Laravel derive the correct base path and routes resolve normally.
+if (isset($_SERVER['SCRIPT_NAME'], $_SERVER['REQUEST_URI'])) {
+    $scriptDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
 
-// URL prefix of this app (e.g. "" at document root, "/sport_management/public" under XAMPP).
-define('BASE_URL', rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/'));
+    if (str_ends_with($scriptDir, '/public')) {
+        $root = substr($scriptDir, 0, -strlen('/public'));
 
-require BASE_PATH . '/vendor/autoload.php';
+        // Only when the request did NOT arrive through /public/ directly.
+        if ($root !== ''
+            && str_starts_with($_SERVER['REQUEST_URI'], $root.'/')
+            && ! str_starts_with($_SERVER['REQUEST_URI'], $scriptDir.'/')) {
+            $_SERVER['SCRIPT_NAME'] = $root.'/index.php';
+        }
+    }
+}
 
-session_start();
+// Determine if the application is in maintenance mode...
+if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
+    require $maintenance;
+}
 
-$config = require BASE_PATH . '/config/config.php';
+// Register the Composer autoloader...
+require __DIR__.'/../vendor/autoload.php';
 
-use App\Core\Request;
-use App\Core\Router;
+// Bootstrap Laravel and handle the request...
+/** @var Application $app */
+$app = require_once __DIR__.'/../bootstrap/app.php';
 
-$request = new Request();
-$router = new Router($request);
-
-require BASE_PATH . '/routes/web.php';
-
-$router->dispatch();
+$app->handleRequest(Request::capture());

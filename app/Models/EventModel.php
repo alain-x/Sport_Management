@@ -1,26 +1,71 @@
 <?php
 
-declare(strict_types=1);
-
 namespace App\Models;
 
-use App\Core\Database;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 /** Calendar entries (training, meetings, travel, deadlines, media). */
 class EventModel extends Model
 {
-    protected static string $table = 'events';
+    use HasFactory;
+
+    protected $table = 'events';
+
+    public $timestamps = false;
 
     public const TYPES = ['training', 'meeting', 'travel', 'deadline', 'media', 'other'];
 
-    private const SELECT_JOINED = 'SELECT e.*,
-                t.name AS team_name, t.code AS team_code,
-                tt.name AS tournament_name,
-                u.name AS creator_name
-             FROM events e
-             LEFT JOIN teams t ON t.id = e.team_id
-             LEFT JOIN tournaments tt ON tt.id = e.tournament_id
-             LEFT JOIN users u ON u.id = e.created_by';
+    protected $fillable = [
+        'title', 'type', 'starts_at', 'team_id', 'tournament_id', 'description', 'created_by',
+    ];
+
+    protected $casts = [
+        'starts_at' => 'datetime',
+        'team_id' => 'integer',
+        'tournament_id' => 'integer',
+        'created_by' => 'integer',
+        'created_at' => 'datetime',
+    ];
+
+    public function team()
+    {
+        return $this->belongsTo(Team::class);
+    }
+
+    public function tournament()
+    {
+        return $this->belongsTo(Tournament::class);
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function attendance()
+    {
+        return $this->hasMany(Attendance::class, 'event_id');
+    }
+
+    private static function joined()
+    {
+        return static::with(['team:id,name,code', 'tournament:id,name', 'creator:id,name']);
+    }
+
+    /** @return array<string, mixed> */
+    private static function row(self $e): array
+    {
+        $row = $e->toArray();
+        $row['team_name'] = $e->team?->name;
+        $row['team_code'] = $e->team?->code;
+        $row['tournament_name'] = $e->tournament?->name;
+        $row['creator_name'] = $e->creator?->name;
+        // Views format starts_at with strtotime(); keep the datetime string shape.
+        $row['starts_at'] = $e->starts_at?->format('Y-m-d H:i:s');
+
+        return $row;
+    }
 
     /**
      * Events between $from and $to visible to the given team scope.
@@ -31,47 +76,47 @@ class EventModel extends Model
      */
     public static function between(string $from, string $to, ?int $teamId): array
     {
-        $where = 'e.starts_at >= :from AND e.starts_at < :to';
-        $params = [':from' => $from, ':to' => $to];
-
-        if ($teamId !== null) {
-            $where .= ' AND (e.team_id IS NULL OR e.team_id = :scope_team)';
-            $params[':scope_team'] = $teamId;
-        }
-
-        return Database::query(
-            self::SELECT_JOINED . ' WHERE ' . $where . ' ORDER BY e.starts_at ASC',
-            $params
-        )->fetchAll();
+        return static::joined()
+            ->where('starts_at', '>=', $from)
+            ->where('starts_at', '<', $to)
+            ->when($teamId !== null, fn ($q) => $q->where(fn ($w) => $w
+                ->whereNull('team_id')->orWhere('team_id', $teamId)))
+            ->orderBy('starts_at')
+            ->get()
+            ->map(fn (self $e) => static::row($e))->all();
     }
 
     /** Next $limit upcoming events visible to the given team scope. */
     public static function upcoming(int $limit, ?int $teamId, ?int $onlyTeamId = null): array
     {
-        $from = date('Y-m-d H:i:s');
-        $to = date('Y-m-d H:i:s', strtotime('+90 days'));
+        $from = now();
+        $to = now()->addDays(90);
 
-        $where = 'e.starts_at >= :from AND e.starts_at < :to';
-        $params = [':from' => $from, ':to' => $to];
-
-        if ($onlyTeamId !== null) {
-            $where .= ' AND e.team_id = :only_team';
-            $params[':only_team'] = $onlyTeamId;
-        } elseif ($teamId !== null) {
-            $where .= ' AND (e.team_id IS NULL OR e.team_id = :scope_team)';
-            $params[':scope_team'] = $teamId;
-        }
-
-        return Database::query(
-            self::SELECT_JOINED . ' WHERE ' . $where . ' ORDER BY e.starts_at ASC LIMIT ' . $limit,
-            $params
-        )->fetchAll();
+        return static::joined()
+            ->where('starts_at', '>=', $from)
+            ->where('starts_at', '<', $to)
+            ->when($onlyTeamId !== null, fn ($q) => $q->where('team_id', $onlyTeamId))
+            ->when($onlyTeamId === null && $teamId !== null, fn ($q) => $q->where(fn ($w) => $w
+                ->whereNull('team_id')->orWhere('team_id', $teamId)))
+            ->orderBy('starts_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn (self $e) => static::row($e))->all();
     }
 
+    /** Event row with details attached, or null. */
     public static function withDetails(int $id): ?array
     {
-        $row = Database::query(self::SELECT_JOINED . ' WHERE e.id = :id', [':id' => $id])->fetch();
+        $event = static::joined()->find($id);
 
-        return $row !== false ? $row : null;
+        return $event !== null ? static::row($event) : null;
+    }
+
+    /** Event row as an array, or null. */
+    public static function findArray(int $id): ?array
+    {
+        $event = static::find($id);
+
+        return $event !== null ? static::row($event) : null;
     }
 }
