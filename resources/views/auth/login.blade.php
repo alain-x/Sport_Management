@@ -28,13 +28,11 @@ $fieldError = $passwordError ?? $emailError;
             <div class="text-center mb-4 text-white">
                 <span class="login-brand-icon"><i class="bi bi-trophy-fill"></i></span>
                 <h1 class="h4 mt-3 mb-0 fw-semibold">{!! e($appName) !!}</h1>
-                <p class="opacity-75 mb-0">Sport management made simple</p>
             </div>
 
             <div class="card login-card shadow-lg border-0">
                 <div class="card-body p-4 p-md-5">
                     <h2 class="h5 fw-semibold mb-1">Welcome back</h2>
-                    <p class="text-muted small mb-4">Sign in to manage your teams, players and fixtures.</p>
 
                     @foreach($flashes as $type => $message)
                         <div class="alert alert-{!! $type === 'error' ? 'danger' : e($type) !!} py-2 small" role="alert">
