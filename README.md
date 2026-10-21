@@ -135,8 +135,9 @@ an email + temporary password. The account is linked 1:1 to the player record
 sport_management/
 ├── app/
 │   ├── Http/Controllers/   # auth (Breeze), dashboard, teams, players, matches,
-│   │                       # tournaments, users, calendar/events, standings,
-│   │                       # attendance, chat
+│   │   │                   # tournaments, users, calendar/events, standings,
+│   │   │                   # attendance, chat
+│   │   └── Api/            # JSON API for the Flutter app (Sanctum tokens)
 │   ├── Models/             # Team, Player, PlayerMetric, PlayerWelfare, Tournament,
 │   │                       # MatchModel, EventModel, User, Attendance, ChatRoom,
 │   │                       # ChatMessage (Eloquent, array-returning query helpers)
@@ -148,12 +149,15 @@ sport_management/
 │   ├── migrations/         # 9 schema-adopting migrations
 │   ├── schema.sql          # Live-app schema + your data (import to sport_management)
 │   ├── seed_demo.sql       # Fixed demo dataset used by the test suite
+│   ├── personal_access_tokens.sql  # Sanctum token table (see Mobile API)
 │   └── migrate_v3.sql      # Non-destructive v2 → v3 upgrade
 ├── public/                 # Web root: index.php, .htaccess, assets/, uploads/
 ├── resources/views/        # Blade templates (layout + pages)
-├── routes/web.php          # All routes
+├── routes/api.php          # Mobile API (JSON, token-authenticated)
+├── routes/web.php          # All web routes
 ├── routes/auth.php         # Login / logout (Breeze)
-└── tests/Feature/Smoke/    # Pest port of the original 128-assertion suite
+├── sport_management_android/  # Flutter client (see Mobile app)
+└── tests/Feature/          # Pest suites (Smoke/* + Api/*)
 ```
 
 ## Routes
@@ -315,6 +319,145 @@ correct, and deleting the player cascades to the login.
 difference, then goals scored. Enter a score with status *Finished* on the
 matches screen and the table updates immediately.
 
+## Mobile API (JSON, Sanctum tokens)
+
+The Flutter app in `sport_management_android/` talks to a stateless JSON API in
+`routes/api.php`, authenticated with **Laravel Sanctum personal access tokens**
+(NOT session cookies). Send the token on every request:
+
+```
+Authorization: Bearer <token>
+Accept: application/json
+```
+
+### Envelope
+
+Successful responses wrap their payload in `data`:
+
+```json
+{ "data": { "items": [ ... ], "meta": { "total": 8 } } }
+```
+
+Failures return `message` plus field-level `errors` (422), or a bare `401` when
+the token is missing/expired:
+
+```json
+{ "message": "The given data was invalid.",
+  "errors": { "email": ["These credentials do not match our records."] } }
+```
+
+### Endpoints
+
+```
+POST /api/login        { email, password, device_name? }  -> { token, token_type, user }
+POST /api/logout       (auth) revoke the current token
+GET  /api/me           (auth) the signed-in user
+
+GET  /api/dashboard                       role-aware summary (admin | manager | player)
+
+GET  /api/teams?q=&page=&per_page=
+GET  /api/teams/{id}                      profile + squad + staff
+GET  /api/teams/{id}/matches              recent + upcoming for one team
+
+GET  /api/players?q=&page=&per_page=
+GET  /api/players/{id}                    profile + metrics + welfare (scoped)
+
+GET  /api/tournaments
+GET  /api/tournaments/{id}                with its matches
+GET  /api/tournaments/{id}/standings
+GET  /api/standings                       table for the active tournament
+
+GET  /api/matches?tournament_id=&status=&page=
+GET  /api/matches/{id}
+POST /api/matches                         (staff) schedule a match
+
+GET  /api/events?from=&to=&team_id=
+GET  /api/events/{id}                     with attendance + tally
+GET  /api/events/{id}/attendance          (staff) roster
+POST /api/events/{id}/attendance          (player) check in, optional photo
+
+GET  /api/chat                            rooms + last-message previews
+GET  /api/chat/{id}/messages?after=       history or new messages
+POST /api/chat/{id}                       { body } post a message
+```
+
+### Scoping
+
+The API mirrors the web app's rules: admins see everything; managers are pinned
+to their own team; players only see their own record and their own team's public
+profiles (private fitness/welfare data is staff-or-self only). Cross-team
+requests answer `404`, and write actions answer `403`.
+
+### One-time setup
+
+Sanctum ships the `personal_access_tokens` table via its own migration. On a
+fresh database `php artisan migrate` creates it. The demo/live databases here
+predate Sanctum, so the table is provided separately:
+
+```bash
+mysql -u root sport_management      < database/personal_access_tokens.sql
+mysql -u root sport_management_test < database/personal_access_tokens.sql
+```
+
+### Try it
+
+```bash
+# built-in server on port 8000
+php -S 0.0.0.0:8000 -t public
+
+curl -s -X POST http://127.0.0.1:8000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@sport.test","password":"password","device_name":"curl"}'
+# -> { "token": "1|...", "token_type": "Bearer", "user": { ... } }
+```
+
+## Mobile app (Flutter)
+
+`sport_management_android/` is a Flutter client for the API above with screens
+for login, the role-aware dashboard, matches, standings, teams, players,
+tournaments, calendar/attendance, chat and profile.
+
+### Pointing the app at the backend
+
+The base URL is resolved in `lib/config.dart`. The defaults are:
+
+| Where the app runs | Base URL |
+| --- | --- |
+| Android emulator | `http://10.0.2.2:8000` |
+| Physical device (same Wi-Fi) | `http://<your-LAN-IP>:8000` |
+| Apache (XAMPP) | `http://<host>/sport_management/public` |
+
+`10.0.2.2` is the emulator's alias for the host machine's loopback, so a dev
+server started with `php -S 0.0.0.0:8000 -t public` is reachable as-is.
+
+Override without editing code:
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://192.168.1.20:8000
+```
+
+### Run it
+
+```bash
+cd sport_management_android
+flutter pub get
+flutter run                 # pick your emulator/device
+```
+
+Sign in with a demo account (e.g. `admin@sport.test` / `password`). On a
+password mismatch the app shows a prominent error banner that dismisses itself
+after **3 seconds**, while an inline message stays under the password field.
+
+### Android toolchain note
+
+Gradle **8.14** (used by the Flutter Android template here) runs on JDK **17–24**.
+If `flutter build apk` fails with a bare version error, the JDK is too new —
+point Flutter at a JDK 21:
+
+```bash
+flutter config --jdk-dir="C:/Users/<you>/jdk21/jdk-21.x.y"
+```
+
 ## Testing
 
 The original four smoke suites (PowerShell + `curl.exe`, **128 assertions**) have
@@ -325,6 +468,7 @@ so the live data is never touched.
 # 1. Create the throwaway test database and load the demo seed into it
 mysql -u root -e "CREATE DATABASE IF NOT EXISTS sport_management_test"
 mysql -u root sport_management_test < database/seed_demo.sql
+mysql -u root sport_management_test < database/personal_access_tokens.sql
 
 # 2. Run the suite
 php artisan test
@@ -343,6 +487,12 @@ real data never breaks the suite.
 | `SmokeTest2Test.php` | `smoke_test2.ps1` | 11 — search filters, player CRUD, standings after a finished match |
 | `SmokeTest3Test.php` | `smoke_test3.ps1` | 36 — manager scoping, metrics/welfare, events, matches, uploads, CSRF |
 | `SmokeV3Test.php` | `smoke_v3.ps1` | 60 — player portal & scoping, check-in + photo, chat groups, admin |
+
+`tests/Feature/Api/MobileApiTest.php` covers the JSON API the Flutter app uses
+(**31 tests**): the real `POST /api/login` → bearer-token flow, 401s for
+missing/bogus tokens, logout revocation, role-aware dashboards, team/player
+scoping (own team only, private metrics hidden from team-mates, cross-team 404),
+standings/matches, events, and chat post/read.
 
 The tests run against the **seeded** `sport_management_test` database
 (`database/seed_demo.sql`) inside a transaction (`DatabaseTransactions`), so they
