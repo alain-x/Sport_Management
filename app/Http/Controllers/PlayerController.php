@@ -109,6 +109,13 @@ class PlayerController extends Controller
         // A player may view their OWN record (performance + wellbeing), but never edit it.
         $isSelf = is_player() && auth_player_id() === (int) $player['id'];
 
+        // A player login is scoped to its own squad: it may open its own profile
+        // and the public profiles of its own team-mates, but nothing else. Other
+        // teams' players are treated as non-existent (404), not merely hidden.
+        if (is_player() && ! $isSelf && auth_team_id() !== (int) $player['team_id']) {
+            abort(404);
+        }
+
         $canManage = $isStaffOfTeam || $isSelf; // Controls visibility of the private tabs.
         $canEdit = $isStaffOfTeam;              // Controls edit forms / destructive actions.
 

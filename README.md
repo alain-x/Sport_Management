@@ -52,6 +52,7 @@ team/player data or read a team-mate's private physical/wellbeing data.
 | Edit team profile & logo | any team | own team only | ✘ |
 | Manage team staff | any team | own team only (cannot change own role) | ✘ |
 | Add / edit / delete players | any team | own team only | ✘ |
+| View player profile pages | any player | any player (own team shows private tabs) | own record + own-team profiles (other teams → 404) |
 | Record physical tests & wellbeing | any player | own team's players only | ✘ |
 | View physical / mental tabs | ✔ | own team's players only | own tabs only |
 | View / edit season statistics | ✔ | own team only | own (read-only) |
@@ -242,6 +243,11 @@ dashboard. It shows:
 Players get a lean navigation bar (Dashboard, My Calendar, My Performance, Chat)
 and are blocked with a 403 from every staff/admin route — `/users`, the player
 list and editor, and event / match / tournament / staff management.
+
+Profile pages are scoped to the player's own squad: a player may open their own
+record and the public profiles of their own team-mates, but a player on another
+team is treated as non-existent (`404`). Team-mates' **Physical** and **Mental**
+tabs stay hidden — only the player themselves and their team's staff see those.
 
 ## Training attendance
 

@@ -80,9 +80,18 @@ test('P07 own performance page has no photo upload form', function () {
         ->not->toContain('/players/1/photo');
 });
 
-test('P08 another player private tabs are hidden', function () {
-    expect($this->actingAs(playerUser())->get('/players/4')->getContent())
-        ->not->toContain('bi-activity');
+test('P08 another team player is not visible at all', function () {
+    // Player 4 (Noah Bennett) belongs to Iron Lions; James is on Thunder FC,
+    // so the record is treated as non-existent rather than merely hidden.
+    $this->actingAs(playerUser())->get('/players/4')->assertStatus(404);
+});
+
+test('P08b a team-mate public profile is visible but private tabs stay hidden', function () {
+    // Player 2 (Liam Harrison) is a Thunder FC team-mate of James.
+    $response = $this->actingAs(playerUser())->get('/players/2');
+
+    $response->assertStatus(200);
+    expect($response->getContent())->not->toContain('bi-activity');
 });
 
 test('P09 /users is forbidden for a player', function () {
