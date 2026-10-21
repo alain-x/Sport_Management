@@ -24,11 +24,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // Set the future directly; setState() is not allowed here and the first
+    // build will pick it up anyway.
+    _future = widget.session.client.dashboard();
   }
 
   void _load() {
-    setState(() => _future = widget.session.client.dashboard());
+    // Execute the async work first, then update state synchronously. Passing a
+    // closure that returns a Future to setState() throws at runtime.
+    final future = widget.session.client.dashboard();
+    setState(() {
+      _future = future;
+    });
   }
 
   @override
