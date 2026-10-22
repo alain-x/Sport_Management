@@ -40,6 +40,9 @@ class Json {
 
   static String string(dynamic value, [String fallback = '']) {
     if (value == null) return fallback;
+    // Maps and lists stringify into something unreadable ("{id: 1, ...}"),
+    // so treat them as missing rather than leaking them into the UI.
+    if (value is Map || value is Iterable) return fallback;
     final text = '$value';
     return text.isEmpty ? fallback : text;
   }
@@ -92,5 +95,34 @@ class Json {
       default:
         return '${n}th';
     }
+  }
+
+  /// Resolves a team name from a match/standing row.
+  ///
+  /// The API exposes the name twice: flattened (`home_name`) and nested
+  /// (`home_team: {id, name, code}`). The flat key wins, the nested object is
+  /// the fallback, so the row renders the real name either way.
+  static String teamName(
+    Map<String, dynamic> row,
+    String prefix, {
+    String fallback = '',
+  }) {
+    final flat = stringOrNull(row['${prefix}_name']);
+    if (flat != null && flat.isNotEmpty) return flat;
+
+    final nested = map(row['${prefix}_team'])['name'];
+    final name = stringOrNull(nested);
+    if (name != null && name.isNotEmpty) return name;
+
+    return fallback;
+  }
+
+  /// Resolves a short team code (e.g. `1HR`) the same way as [teamName].
+  static String teamCode(Map<String, dynamic> row, String prefix) {
+    final flat = stringOrNull(row['${prefix}_code']);
+    if (flat != null && flat.isNotEmpty) return flat;
+
+    final nested = map(row['${prefix}_team'])['code'];
+    return stringOrNull(nested) ?? '';
   }
 }

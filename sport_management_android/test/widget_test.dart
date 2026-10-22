@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:sport_management_android/config.dart';
 import 'package:sport_management_android/models/app_user.dart';
+import 'package:sport_management_android/models/json.dart';
 import 'package:sport_management_android/services/api_client.dart';
 import 'package:sport_management_android/services/api_exception.dart';
 
@@ -31,6 +32,62 @@ void main() {
       expect(user.initials, 'AV');
       expect(user.roleLabel, 'Player');
       expect(user.teamName, '1000 Hills Rugby');
+    });
+  });
+
+  group('Json', () {
+    // A match row as returned by /api/dashboard: the team name is present
+    // both flattened and as a nested object.
+    final match = <String, dynamic>{
+      'id': 1,
+      'status': 'finished',
+      'home_score': 2,
+      'away_score': 1,
+      'match_date': '2026-08-15 18:00:00',
+      'home_name': '1000 Hills Rugby',
+      'home_code': '1HR',
+      'away_name': 'Lions De fer',
+      'away_code': 'LDF',
+      'home_team': {'id': 1, 'name': '1000 Hills Rugby', 'code': '1HR'},
+      'away_team': {'id': 2, 'name': 'Lions De fer', 'code': 'LDF'},
+    };
+
+    test('teamName prefers the flattened name', () {
+      expect(Json.teamName(match, 'home', fallback: 'Home'), '1000 Hills Rugby');
+      expect(Json.teamName(match, 'away', fallback: 'Away'), 'Lions De fer');
+    });
+
+    test('teamName falls back to the nested team object', () {
+      final nestedOnly = <String, dynamic>{
+        'home_team': {'id': 1, 'name': '1000 Hills Rugby', 'code': '1HR'},
+      };
+
+      expect(
+        Json.teamName(nestedOnly, 'home', fallback: 'Home'),
+        '1000 Hills Rugby',
+      );
+    });
+
+    test('teamName falls back when neither shape is present', () {
+      expect(Json.teamName(<String, dynamic>{}, 'home', fallback: 'Home'), 'Home');
+    });
+
+    test('teamCode reads the flat or nested code', () {
+      expect(Json.teamCode(match, 'home'), '1HR');
+      expect(
+        Json.teamCode(
+          <String, dynamic>{
+            'away_team': {'id': 2, 'name': 'Lions De fer', 'code': 'LDF'},
+          },
+          'away',
+        ),
+        'LDF',
+      );
+    });
+
+    test('string never leaks a raw map into the UI', () {
+      expect(Json.string(match['home_team'], 'Home'), 'Home');
+      expect(Json.string(match['home_name'], 'Home'), '1000 Hills Rugby');
     });
   });
 

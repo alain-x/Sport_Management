@@ -111,8 +111,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
-        _matchSection('Recent results', data['recent_matches'], empty: true),
-        _matchSection('Upcoming fixtures', data['upcoming_matches']),
+        _matchSection('Recent results', data['recent_matches'],
+            empty: 'No finished matches yet.'),
+        _matchSection('Upcoming fixtures', data['upcoming_matches'],
+            empty: 'No scheduled matches.'),
         _scorerSection('Top scorers', data['top_scorers']),
         _eventSection('Upcoming events', data['upcoming_events']),
       ],
@@ -146,8 +148,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
-        _matchSection('Recent results', data['recent_matches']),
-        _matchSection('Upcoming fixtures', data['upcoming_matches']),
+        _matchSection('Recent results', data['recent_matches'],
+            empty: 'No finished matches yet.'),
+        _matchSection('Upcoming fixtures', data['upcoming_matches'],
+            empty: 'No scheduled matches.'),
         _scorerSection('Top scorers', data['top_scorers']),
         _eventSection('Upcoming events', data['upcoming_events']),
       ],
@@ -217,12 +221,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ----- Shared sections -----
 
-  Widget _matchSection(String title, dynamic raw, {bool empty = false}) {
+  Widget _matchSection(String title, dynamic raw, {String empty = ''}) {
     final matches = Json.list(raw);
     return _Section(
       title: title,
       child: matches.isEmpty
-          ? _EmptyLine(empty ? 'Nothing here yet.' : 'No matches to show.')
+          ? _EmptyLine(empty.isEmpty ? 'No matches to show.' : empty)
           : Column(
               children: [
                 for (final match in matches)
@@ -487,19 +491,40 @@ class _MatchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final status = Json.string(match['status'], 'scheduled');
-    final home = Json.string(match['home_team_name'],
-        Json.string(match['home_team'], 'Home'));
-    final away = Json.string(match['away_team_name'],
-        Json.string(match['away_team'], 'Away'));
+    final home = Json.teamName(match, 'home', fallback: 'Home');
+    final away = Json.teamName(match, 'away', fallback: 'Away');
+    final homeCode = Json.teamCode(match, 'home');
+    final awayCode = Json.teamCode(match, 'away');
+    final scheduled = status == 'scheduled';
 
     return ListTile(
-      title: Text('$home  vs  $away'),
-      subtitle: Text(Json.dateTimeLabel(match['match_date'])),
-      trailing: status == 'scheduled'
+      title: Row(
+        children: [
+          if (homeCode.isNotEmpty) _codeBadge(context, homeCode),
+          Expanded(
+            child: Text(
+              '$home  vs  $away',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (awayCode.isNotEmpty) _codeBadge(context, awayCode),
+        ],
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          Json.dateTimeLabel(match['match_date']),
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.outline),
+        ),
+      ),
+      trailing: scheduled
           ? StatusChip(
               label: 'Scheduled',
-              color: StatusChip.colorFor(status, Theme.of(context).colorScheme),
+              color: StatusChip.colorFor(status, theme.colorScheme),
             )
           : Text(
               '${Json.intOr(match['home_score'])} - ${Json.intOr(match['away_score'])}',
@@ -517,6 +542,28 @@ class _MatchTile extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  /// Small monospace-ish badge with the team's short code (e.g. `1HR`).
+  Widget _codeBadge(BuildContext context, String code) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Text(
+        code,
+        style: TextStyle(
+          color: scheme.outline,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }
