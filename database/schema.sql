@@ -108,7 +108,7 @@ INSERT INTO `players`
     (`team_id`, `first_name`, `last_name`, `jersey_number`, `position`, `date_of_birth`, `nationality`, `foot`,
      `goals`, `assists`, `appearances`, `minutes_played`, `yellow_cards`, `red_cards`, `rating`) VALUES
 -- Thunder FC
-(1, 'James',  'Carter',   9,  'Forward',     '2001-04-12', 'English',    'right', 7, 2, 8, 690, 1, 0, 8.24);
+(1, 'Gasore',  'Alain',   9,  'Winger',     '2001-04-12', 'Rwandan',    'right', 7, 2, 8, 690, 1, 0, 8.24);
 
 -- ------------------------------------------------------------
 -- Physical metrics history (fitness tests)
