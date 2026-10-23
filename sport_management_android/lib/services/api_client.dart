@@ -64,6 +64,48 @@ class ApiClient {
     return _send('DELETE', path);
   }
 
+  /// POST a multipart form (used for camera selfies / attendance check-in).
+  ///
+  /// [filePath] points at a local file captured on the device; [fields] are
+  /// sent alongside it as regular form values.
+  Future<dynamic> postMultipart(
+    String path, {
+    Map<String, String> fields = const {},
+    String fileField = 'photo',
+    String? filePath,
+  }) async {
+    final uri = _buildUri(path, null);
+    final token = _tokenProvider();
+
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Accept'] = 'application/json';
+    if (token != null && token.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
+    request.fields.addAll(fields);
+
+    try {
+      if (filePath != null && filePath.isNotEmpty) {
+        request.files.add(await http.MultipartFile.fromPath(fileField, filePath));
+      }
+
+      final streamed = await _http.send(request).timeout(AppConfig.requestTimeout);
+      final response = await http.Response.fromStream(streamed);
+      return _decode(response);
+    } on TimeoutException {
+      throw ApiException(
+        'The server took too long to respond. Please try again.',
+      );
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException(
+        'Could not upload the photo to ${AppConfig.apiBaseUrl}. '
+        'Check your connection and try again.',
+      );
+    }
+  }
+
   /// Log in and return the raw payload (`{ token, token_type, user }`).
   Future<Map<String, dynamic>> login({
     required String email,

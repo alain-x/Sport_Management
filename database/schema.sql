@@ -230,6 +230,8 @@ CREATE TABLE `events` (
     `title`         VARCHAR(150) NOT NULL,
     `type`          ENUM('training','meeting','travel','deadline','media','other') NOT NULL DEFAULT 'training',
     `starts_at`     DATETIME     NOT NULL,
+    `checkin_opens_minutes` SMALLINT UNSIGNED NOT NULL DEFAULT 20,
+    `checkin_late_minutes`  SMALLINT UNSIGNED NOT NULL DEFAULT 10,
     `team_id`       INT UNSIGNED DEFAULT NULL,
     `tournament_id` INT UNSIGNED DEFAULT NULL,
     `description`   TEXT         DEFAULT NULL,

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../models/app_user.dart';
 import '../state/session_store.dart';
+import '../widgets/common.dart';
 import 'chat_screen.dart';
 import 'dashboard_screen.dart';
 import 'events_screen.dart';
@@ -12,6 +14,9 @@ import 'teams_screen.dart';
 import 'tournaments_screen.dart';
 
 /// The signed-in shell: a title bar, bottom navigation and the module screens.
+///
+/// Navigation is role-aware. Everyone gets Home / Matches / Events / Squad,
+/// while the "More" tab only exposes modules the signed-in role can use.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.session});
 
@@ -24,62 +29,114 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  List<_Destination> get _destinations => [
-        _Destination(
-          label: 'Home',
-          icon: Icons.dashboard_outlined,
-          selectedIcon: Icons.dashboard,
-          builder: (_) => DashboardScreen(session: widget.session),
-        ),
-        _Destination(
-          label: 'Matches',
-          icon: Icons.sports_soccer_outlined,
-          selectedIcon: Icons.sports_soccer,
-          builder: (_) => MatchesScreen(session: widget.session),
-        ),
-        _Destination(
-          label: 'Standings',
-          icon: Icons.leaderboard_outlined,
-          selectedIcon: Icons.leaderboard,
-          builder: (_) => StandingsScreen(session: widget.session),
-        ),
-        _Destination(
-          label: 'Teams',
-          icon: Icons.groups_outlined,
-          selectedIcon: Icons.groups,
-          builder: (_) => TeamsScreen(session: widget.session),
-        ),
-        _Destination(
-          label: 'More',
-          icon: Icons.more_horiz,
-          selectedIcon: Icons.more_horiz,
-          builder: (_) => _MoreScreen(session: widget.session),
-        ),
-      ];
+  void _open(WidgetBuilder builder) {
+    Navigator.of(context).push(MaterialPageRoute(builder: builder));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final destinations = _destinations;
+    final user = widget.session.user;
+    final isPlayer = user?.isPlayer ?? false;
+
+    final destinations = <_Destination>[
+      _Destination(
+        label: 'Home',
+        icon: Icons.dashboard_outlined,
+        selectedIcon: Icons.dashboard,
+        builder: (_) => DashboardScreen(session: widget.session),
+      ),
+      _Destination(
+        label: 'Matches',
+        icon: Icons.sports_soccer_outlined,
+        selectedIcon: Icons.sports_soccer,
+        builder: (_) => MatchesScreen(session: widget.session),
+      ),
+      _Destination(
+        label: 'Events',
+        icon: Icons.event_available_outlined,
+        selectedIcon: Icons.event_available,
+        builder: (_) => EventsScreen(session: widget.session, embedded: true),
+      ),
+      _Destination(
+        label: isPlayer ? 'Squad' : 'Players',
+        icon: Icons.groups_outlined,
+        selectedIcon: Icons.groups,
+        builder: (_) => PlayersScreen(session: widget.session, embedded: true),
+      ),
+      _Destination(
+        label: 'More',
+        icon: Icons.grid_view_outlined,
+        selectedIcon: Icons.grid_view,
+        builder: (_) => _MoreScreen(session: widget.session),
+      ),
+    ];
+
+    final current = destinations[_index];
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(destinations[_index].label),
+        title: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.sports_rugby,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _index == 0 ? 'Sport Manager' : current.label,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                    ),
+                  ),
+                  if (_index == 0)
+                    Text(
+                      _subtitle(user),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.outline,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: 'Chat',
             icon: const Icon(Icons.forum_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ChatScreen(session: widget.session),
-              ),
-            ),
+            onPressed: () => _open((_) => ChatScreen(session: widget.session)),
           ),
-          IconButton(
-            tooltip: 'Profile',
-            icon: const Icon(Icons.person_outline),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ProfileScreen(session: widget.session),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(24),
+              onTap: () =>
+                  _open((_) => ProfileScreen(session: widget.session)),
+              child: UserAvatar(
+                photo: user?.photo,
+                initials: user?.initials ?? '?',
+                radius: 17,
+                backgroundColor:
+                    Theme.of(context).colorScheme.primaryContainer,
+                foregroundColor:
+                    Theme.of(context).colorScheme.onPrimaryContainer,
               ),
             ),
           ),
@@ -87,9 +144,7 @@ class _HomeShellState extends State<HomeShell> {
       ),
       body: IndexedStack(
         index: _index,
-        children: [
-          for (final d in destinations) d.builder(context),
-        ],
+        children: [for (final d in destinations) d.builder(context)],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -104,6 +159,14 @@ class _HomeShellState extends State<HomeShell> {
         ],
       ),
     );
+  }
+
+  String _subtitle(AppUser? user) {
+    if (user == null) return '';
+    return [
+      user.roleLabel,
+      if (user.teamName != null && user.teamName!.isNotEmpty) user.teamName!,
+    ].join(' · ');
   }
 }
 
@@ -121,8 +184,7 @@ class _Destination {
   final WidgetBuilder builder;
 }
 
-/// Groups the remaining modules (players, tournaments, events, chat, profile)
-/// behind the "More" tab.
+/// Groups the remaining modules behind the "More" tab, filtered by role.
 class _MoreScreen extends StatelessWidget {
   const _MoreScreen({required this.session});
 
@@ -130,13 +192,22 @@ class _MoreScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = session.user;
     final entries = <_MoreEntry>[
-      _MoreEntry(
-        title: 'Players',
-        subtitle: 'Squads and player profiles',
-        icon: Icons.person_search_outlined,
-        builder: (_) => PlayersScreen(session: session),
-      ),
+      if (user?.isAdmin ?? false)
+        _MoreEntry(
+          title: 'Teams',
+          subtitle: 'All registered clubs and their squads',
+          icon: Icons.groups_2_outlined,
+          builder: (_) => TeamsScreen(session: session),
+        ),
+      if (user?.isManager ?? false)
+        _MoreEntry(
+          title: 'My team',
+          subtitle: '${user?.teamName ?? 'Your club'} squad and staff',
+          icon: Icons.shield_outlined,
+          builder: (_) => TeamsScreen(session: session),
+        ),
       _MoreEntry(
         title: 'Tournaments',
         subtitle: 'Competitions and their fixtures',
@@ -144,10 +215,10 @@ class _MoreScreen extends StatelessWidget {
         builder: (_) => TournamentsScreen(session: session),
       ),
       _MoreEntry(
-        title: 'Calendar & training',
-        subtitle: 'Events and attendance check-in',
-        icon: Icons.event_available_outlined,
-        builder: (_) => EventsScreen(session: session),
+        title: 'Standings',
+        subtitle: 'League tables for active competitions',
+        icon: Icons.leaderboard_outlined,
+        builder: (_) => StandingsScreen(session: session),
       ),
       _MoreEntry(
         title: 'Chat',
@@ -163,22 +234,48 @@ class _MoreScreen extends StatelessWidget {
       ),
     ];
 
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: entries.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, i) {
-        final entry = entries[i];
-        return ListTile(
-          leading: Icon(entry.icon),
-          title: Text(entry.title),
-          subtitle: Text(entry.subtitle),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: entry.builder),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'Manage',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              letterSpacing: 0.6,
+              color: Theme.of(context).colorScheme.outline,
+            ),
           ),
-        );
-      },
+        ),
+        for (final entry in entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor:
+                      Theme.of(context).colorScheme.primaryContainer,
+                  child: Icon(
+                    entry.icon,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    size: 20,
+                  ),
+                ),
+                title: Text(
+                  entry.title,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(entry.subtitle),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: entry.builder),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

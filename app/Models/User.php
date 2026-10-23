@@ -99,6 +99,27 @@ class User extends Authenticatable
     }
 
     // ------------------------------------------------------------------
+    // Serialisation
+    // ------------------------------------------------------------------
+
+    /** Profile shape returned by /login, /me and /profile. */
+    public function apiPayload(): array
+    {
+        return [
+            'id' => (int) $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
+            'role' => $this->role,
+            'team_id' => $this->team_id,
+            'player_id' => $this->player_id,
+            'phone' => $this->phone,
+            'photo' => $this->photo,
+            'team_name' => $this->team?->name,
+            'team_code' => $this->team?->code,
+        ];
+    }
+
+    // ------------------------------------------------------------------
     // Query helpers (array shapes matching the original app)
     // ------------------------------------------------------------------
 

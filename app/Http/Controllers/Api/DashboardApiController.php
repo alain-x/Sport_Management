@@ -47,6 +47,8 @@ class DashboardApiController extends ApiController
             'top_scorers' => Player::topScorers(5),
             'ongoing_tournaments' => Tournament::byStatus('ongoing', 3),
             'upcoming_events' => EventModel::upcoming(5, null),
+            'attendance' => Attendance::overallSummary(),
+            'recent_check_ins' => Attendance::recentCheckIns(6),
         ];
     }
 
@@ -69,6 +71,11 @@ class DashboardApiController extends ApiController
             'alerts' => Player::alerts($teamId),
             'upcoming_events' => EventModel::upcoming(5, $teamId),
             'top_scorers' => Player::topScorersForTeam($teamId, 5),
+            'attendance' => Attendance::teamSummary($teamId),
+            'attendance_per_player' => Attendance::teamPerPlayer($teamId),
+            'attendance_trend' => Attendance::teamMonthlyTrend($teamId),
+            'recent_check_ins' => Attendance::recentCheckIns(6, $teamId),
+            'performance' => Player::performanceSummaryForTeam($teamId),
         ];
     }
 
@@ -84,6 +91,7 @@ class DashboardApiController extends ApiController
         $teamId = (int) $player['team_id'];
         $upcoming = EventModel::upcoming(8, $teamId, $teamId);
         $eventIds = array_map(static fn (array $e): int => (int) $e['id'], $upcoming);
+        $summary = Attendance::withRate(Attendance::summaryForPlayer((int) $player['id']));
 
         return [
             'role' => 'player',
@@ -91,7 +99,16 @@ class DashboardApiController extends ApiController
             'team' => Team::findArray($teamId),
             'upcoming' => $upcoming,
             'attendance_statuses' => Attendance::statusesForPlayer((int) $player['id'], $eventIds),
-            'attendance_summary' => Attendance::summaryForPlayer((int) $player['id']),
+            'attendance_summary' => $summary,
+            'attendance_history' => Attendance::historyForPlayer((int) $player['id'], 20),
+            'performance' => [
+                'goals' => (int) ($player['goals'] ?? 0),
+                'assists' => (int) ($player['assists'] ?? 0),
+                'appearances' => (int) ($player['appearances'] ?? 0),
+                'minutes_played' => (int) ($player['minutes_played'] ?? 0),
+                'rating' => $player['rating'],
+                'attendance_rate' => $summary['rate'],
+            ],
             'latest_metric' => PlayerMetric::latestFor((int) $player['id']),
             'latest_welfare' => PlayerWelfare::latestFor((int) $player['id']),
         ];

@@ -14,9 +14,9 @@ enum SessionStatus { unknown, signedOut, signedIn }
 /// On launch it restores the token from disk, then validates it against
 /// `GET /me` so a revoked token lands the user back on the login screen.
 class SessionStore extends ChangeNotifier {
-  SessionStore({TokenStorage? storage})
+  SessionStore({TokenStorage? storage, ApiClient? client})
       : _storage = storage ?? TokenStorage() {
-    _client = ApiClient(tokenProvider: () => _token);
+    _client = client ?? ApiClient(tokenProvider: () => _token);
   }
 
   final TokenStorage _storage;
@@ -111,6 +111,55 @@ class SessionStore extends ChangeNotifier {
     _user = null;
     await _storage.clear();
     _setSignedOut();
+  }
+
+  /// Update the signed-in user's name (and optional phone number).
+  Future<void> updateProfile({required String name, String? phone}) async {
+    final data = await _client.post(
+      '/profile',
+      body: <String, dynamic>{
+        'name': name,
+        'phone': phone,
+      },
+    );
+    await _applyUser(data);
+  }
+
+  /// Upload a new profile photo from a local file path.
+  Future<void> uploadAvatar(String filePath) async {
+    final data = await _client.postMultipart(
+      '/profile/photo',
+      filePath: filePath,
+    );
+    await _applyUser(data);
+  }
+
+  /// Change the signed-in user's password after confirming the current one.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String confirmation,
+  }) async {
+    await _client.post(
+      '/profile/password',
+      body: {
+        'current_password': currentPassword,
+        'password': newPassword,
+        'password_confirmation': confirmation,
+      },
+    );
+  }
+
+  /// Replace the cached user with a fresh payload from the API.
+  Future<void> _applyUser(dynamic payload) async {
+    if (payload is! Map) {
+      throw ApiException('The server returned an unexpected response.');
+    }
+    _user = AppUser.fromJson(
+      payload.map((key, value) => MapEntry('$key', value)),
+    );
+    await _storage.writeUserJson(jsonEncode(_user!.toJson()));
+    notifyListeners();
   }
 
   /// Refresh the cached user profile from the server.

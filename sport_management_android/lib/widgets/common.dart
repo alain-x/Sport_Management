@@ -1,6 +1,62 @@
 import 'package:flutter/material.dart';
 
+import '../config.dart';
+
 /// Small reusable pieces shared across screens.
+
+/// A round user avatar that shows an uploaded photo, falling back to initials.
+class UserAvatar extends StatelessWidget {
+  const UserAvatar({
+    super.key,
+    required this.photo,
+    required this.initials,
+    this.radius = 20,
+    this.backgroundColor,
+    this.foregroundColor,
+  });
+
+  final String? photo;
+  final String initials;
+  final double radius;
+  final Color? backgroundColor;
+  final Color? foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bg = backgroundColor ?? scheme.primaryContainer;
+    final fg = foregroundColor ?? scheme.onPrimaryContainer;
+    final url = AppConfig.uploadUrl(photo);
+    final fallback = Container(
+      width: radius * 2,
+      height: radius * 2,
+      color: bg,
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: fg,
+          fontSize: radius * 0.62,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+
+    return ClipOval(
+      child: SizedBox(
+        width: radius * 2,
+        height: radius * 2,
+        child: url.isEmpty
+            ? fallback
+            : Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback,
+              ),
+      ),
+    );
+  }
+}
 
 /// A centred spinner used while a screen's future is loading.
 class LoadingView extends StatelessWidget {

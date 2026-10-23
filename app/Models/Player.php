@@ -145,6 +145,51 @@ class Player extends Model
             ->all();
     }
 
+    /** Squad roster (compact) used by attendance sheets and exports. */
+    public static function rosterForTeam(int $teamId): array
+    {
+        return static::where('team_id', $teamId)
+            ->orderByRaw('jersey_number IS NULL, jersey_number ASC')
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'last_name', 'jersey_number', 'position', 'photo'])
+            ->map(fn (self $p) => [
+                'id' => (int) $p->id,
+                'first_name' => $p->first_name,
+                'last_name' => $p->last_name,
+                'jersey_number' => $p->jersey_number,
+                'position' => $p->position,
+                'photo' => $p->photo,
+            ])
+            ->all();
+    }
+
+    /**
+     * Aggregate performance for a squad (dashboard + exports).
+     *
+     * @return array<string, mixed>
+     */
+    public static function performanceSummaryForTeam(int $teamId): array
+    {
+        $row = static::where('team_id', $teamId)->first([
+            DB::raw('COALESCE(SUM(goals), 0) AS goals'),
+            DB::raw('COALESCE(SUM(assists), 0) AS assists'),
+            DB::raw('COALESCE(SUM(appearances), 0) AS appearances'),
+            DB::raw('COALESCE(SUM(minutes_played), 0) AS minutes_played'),
+            DB::raw('AVG(rating) AS average_rating'),
+        ]);
+
+        return [
+            'goals' => (int) ($row->goals ?? 0),
+            'assists' => (int) ($row->assists ?? 0),
+            'appearances' => (int) ($row->appearances ?? 0),
+            'minutes_played' => (int) ($row->minutes_played ?? 0),
+            'average_rating' => round((float) ($row->average_rating ?? 0), 2),
+            'top_scorers' => static::topScorersForTeam($teamId, 5),
+            'fitness' => static::fitnessOverview($teamId),
+        ];
+    }
+
     /**
      * Squad fitness overview: latest physical test status counts
      * (excellent/good/fair/poor/injured + "untested" players).

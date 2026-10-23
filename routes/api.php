@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\DashboardApiController;
 use App\Http\Controllers\Api\EventApiController;
 use App\Http\Controllers\Api\MatchApiController;
 use App\Http\Controllers\Api\PlayerApiController;
+use App\Http\Controllers\Api\ProfileApiController;
 use App\Http\Controllers\Api\TeamApiController;
 use App\Http\Controllers\Api\TournamentApiController;
 use Illuminate\Support\Facades\Route;
@@ -37,6 +38,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthApiController::class, 'logout']);
     Route::get('/me', [AuthApiController::class, 'me']);
 
+    // Own profile (name, photo, password) - available to every role.
+    Route::post('/profile', [ProfileApiController::class, 'update']);
+    Route::post('/profile/photo', [ProfileApiController::class, 'photo']);
+    Route::post('/profile/password', [ProfileApiController::class, 'password']);
+
     Route::get('/dashboard', [DashboardApiController::class, 'index']);
 
     // Teams.
@@ -61,9 +67,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Events + attendance.
     Route::get('/events', [EventApiController::class, 'index']);
+    Route::get('/event-options', [EventApiController::class, 'options']);
+    Route::post('/events', [EventApiController::class, 'store']);
     Route::get('/events/{id}', [EventApiController::class, 'show'])->whereNumber('id');
+    Route::post('/events/{id}', [EventApiController::class, 'update'])->whereNumber('id');
+    Route::post('/events/{id}/delete', [EventApiController::class, 'destroy'])->whereNumber('id');
     Route::get('/events/{id}/attendance', [EventApiController::class, 'roster'])->whereNumber('id');
     Route::post('/events/{id}/attendance', [EventApiController::class, 'checkIn'])->whereNumber('id');
+    Route::post('/events/{id}/attendance/{playerId}', [EventApiController::class, 'updateAttendance'])
+        ->whereNumber('id')->whereNumber('playerId');
+    Route::post('/events/{id}/checkin-rules', [EventApiController::class, 'checkinRules'])->whereNumber('id');
 
     // Chat.
     Route::get('/chat', [ChatApiController::class, 'index']);

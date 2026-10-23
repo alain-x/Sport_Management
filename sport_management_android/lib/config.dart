@@ -46,6 +46,19 @@ class AppConfig {
   /// How long a single request may take before it is treated as a timeout.
   static const Duration requestTimeout = Duration(seconds: 20);
 
+  /// Turns a relative upload path from the API (`attendance/abc.jpg`) into a
+  /// full URL served by the backend.
+  static String uploadUrl(String? path) {
+    final value = (path ?? '').trim();
+    if (value.isEmpty) return '';
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+
+    final clean = value.startsWith('/') ? value.substring(1) : value;
+    return '$hostBaseUrl/uploads/$clean';
+  }
+
   /// How long the login error popup stays on screen.
   static const Duration loginErrorDuration = Duration(seconds: 3);
 

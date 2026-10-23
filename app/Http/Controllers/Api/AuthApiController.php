@@ -85,18 +85,7 @@ class AuthApiController extends ApiController
     /** User shape returned to the client (never includes the password). */
     private function userPayload(User $user): array
     {
-        return [
-            'id' => (int) $user->id,
-            'name' => $user->name,
-            'email' => $user->email,
-            'role' => $user->role,
-            'team_id' => $user->team_id,
-            'player_id' => $user->player_id,
-            'phone' => $user->phone,
-            'photo' => $user->photo,
-            'team_name' => $user->team?->name,
-            'team_code' => $user->team?->code,
-        ];
+        return $user->apiPayload();
     }
 
     /** True when the value looks like a hash the configured hasher can verify. */

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\Attendance;
 use App\Models\Player;
 use App\Models\PlayerMetric;
 use App\Models\PlayerWelfare;
@@ -34,6 +35,18 @@ class PlayerApiController extends ApiController
         }
 
         $items = Player::paginate($perPage, $offset, $search, $teamId);
+
+        // Attach attendance rates in one grouped query so the list can show
+        // who is turning up to training without N+1 requests.
+        $rates = Attendance::ratesForPlayers(
+            array_map(static fn (array $p): int => (int) $p['id'], $items)
+        );
+        foreach ($items as &$player) {
+            $rate = $rates[(int) $player['id']] ?? null;
+            $player['attendance_rate'] = $rate['rate'] ?? 0;
+            $player['attendance_marked'] = $rate['marked'] ?? 0;
+        }
+        unset($player);
 
         return $this->ok([
             'items' => $items,
@@ -76,6 +89,22 @@ class PlayerApiController extends ApiController
 
         $payload['metrics'] = $canSeePrivate ? PlayerMetric::forPlayer($playerId) : [];
         $payload['welfare'] = $canSeePrivate ? PlayerWelfare::forPlayer($playerId) : [];
+
+        // Attendance + performance data powers the manager's monitoring tabs
+        // and the Excel record sheet.
+        $summary = Attendance::withRate(Attendance::summaryForPlayer($playerId));
+        $payload['attendance_summary'] = $summary;
+        $payload['attendance'] = Attendance::historyForPlayer($playerId, 200);
+        $payload['performance'] = [
+            'goals' => (int) ($player['goals'] ?? 0),
+            'assists' => (int) ($player['assists'] ?? 0),
+            'appearances' => (int) ($player['appearances'] ?? 0),
+            'minutes_played' => (int) ($player['minutes_played'] ?? 0),
+            'yellow_cards' => (int) ($player['yellow_cards'] ?? 0),
+            'red_cards' => (int) ($player['red_cards'] ?? 0),
+            'rating' => $player['rating'],
+            'attendance_rate' => $summary['rate'],
+        ];
 
         return $this->ok($payload);
     }
